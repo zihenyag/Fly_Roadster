@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.codegraph/
+.openai/*.tar.gz
+artifacts/*.png
+artifacts/*.json
+artifacts/*.tar.gz
+!artifacts/verification.json
+.DS_Store
+.playwright-cli/
+output/

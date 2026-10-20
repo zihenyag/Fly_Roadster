@@ -49,3 +49,11 @@ npm run build
 `npm run verify` 检查1,000个种子各30 km的生成约束；使用与游戏相同的物理引擎和可由功能键产生的轻重输入，回放50个种子各20 km。长距离回放不包含随机交通，交通接触与险车准入另行测试；结果写入 `artifacts/verification.json`。这组检查不是对任意玩家状态或所有无限随机组合的数学证明。
 
 车型使用程序化原创近似模型，并非厂商CAD。桌面宽屏是首版支持的平台；浏览器不提供中文语音时仍保留文字导航。构建产物在 `dist/`，可以静态托管。
+
+## GitHub Pages
+
+项目完全在浏览器运行，不需要后端。资源使用相对路径，可部署在 GitHub Pages 的仓库子目录。
+
+仓库为 `zihenyag/Fly_Roadster`。推送到 `main` 后，`.github/workflows/pages.yml` 会运行测试、构建并发布 `dist/`。也可在 Actions 中手动运行部署。如果仓库尚未启用 Pages 且自动启用受权限限制，在仓库 **Settings → Pages → Build and deployment → Source** 选择 **GitHub Actions**，然后重新运行工作流。
+
+预期访问地址为 `https://zihenyag.github.io/Fly_Roadster/`；实际部署状态以 GitHub Actions 的部署结果为准。仅上传 TypeScript 源文件或双击打开 `index.html` 不能替代构建与静态托管。

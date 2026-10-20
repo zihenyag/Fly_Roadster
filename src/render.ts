@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { Simulation, NPC, Patch } from './simulation';
 import { UP, eventText, clamp, LANE_WIDTH, ROAD_HALF, RAIL_X, type RoadFrame } from './core';
 import { VEHICLES,centerHeight } from './vehicles';
+import { makeRoadsterBody } from './roadster';
 
 const mat=(color:number,roughness=0.65,metalness=0)=>new T.MeshStandardMaterial({color,roughness,metalness});
 const DARK=mat(0x151d1d),GLASS=mat(0x334d55,0.16,0.4),WHITE=mat(0xe9e5dc,0.25,0.45),RUBBER=mat(0x111717);
@@ -108,33 +109,13 @@ export class View {
     box(mount,[w*0.75,0.08,0.14],[0,-h/2-0.035,-0.12],DARK);return m;
   }
   private makeShell() {
-    const g=this.shell;this.scene.add(g);const base=0.80;
-    const sections=[[-2.35,0.69,0.49],[-2.02,0.91,0.67],[-1.22,0.99,0.73],[-0.65,1.00,0.78],[0.70,0.98,0.91],[1.40,0.98,1.02],[2.12,0.89,0.86],[2.35,0.70,0.65]];
-    for(const side of [-1,1]) {
-      const vertices:number[]=[],indices:number[]=[];
-      for(const [z,w,y]of sections){vertices.push(side*(w-0.10),y-base,z,side*w,y-0.10-base,z,side*w*0.94,0.34-base,z);}
-      for(let i=0;i<sections.length-1;i++)for(let j=0;j<2;j++){const a=i*3+j,b=a+3;indices.push(a,b,a+1,a+1,b,b+1);}
-      const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(vertices,3));geo.setIndex(indices);geo.computeVertexNormals();const m=new T.Mesh(geo,new T.MeshStandardMaterial({color:0xe8e6dc,roughness:0.25,metalness:0.40,side:T.DoubleSide}));g.add(m);
-      box(g,[0.12,0.13,2.2],[side*0.97,0.30-base,0],DARK);
-      const rearPillar=box(g,[0.065,0.65,0.065],[side*0.91,1.25-base,1.16],DARK);rearPillar.rotation.x=0.12;
-      const doorGlass=new T.Mesh(new T.PlaneGeometry(1.78,0.55),new T.MeshStandardMaterial({color:0xabc6c6,transparent:true,opacity:0.07,roughness:0.12,side:T.DoubleSide,depthWrite:false}));doorGlass.rotation.y=side*Math.PI/2;doorGlass.position.set(side*0.99,1.16-base,0.22);g.add(doorGlass);
-      for(const z of [-1.48,1.48]) {const tire=new T.Mesh(new T.CylinderGeometry(0.36,0.36,0.24,32),RUBBER);tire.rotation.z=Math.PI/2;tire.position.set(side*0.94,0.36-base,z);g.add(tire);const rim=new T.Mesh(new T.CylinderGeometry(0.25,0.25,0.25,12),mat(0x9ca6a3,0.25,0.85));rim.rotation.z=Math.PI/2;rim.position.copy(tire.position);g.add(rim);}
-    }
-    const hood=box(g,[1.72,0.12,1.25],[0,0.65-base,-1.70],WHITE);hood.rotation.x=-0.06;
-    pill(g,1.72,0.32,0.32,[0,0.56-base,-2.32],WHITE);pill(g,1.74,0.28,0.28,[0,0.73-base,2.08],WHITE);
-    box(g,[1.50,0.10,0.16],[0,0.44-base,-2.35],DARK);box(g,[1.60,0.10,0.18],[0,0.43-base,2.24],DARK);
-    box(g,[1.71,0.035,0.24],[0,1.0-base,2.1],DARK);
-    const rearDeck=box(g,[1.72,0.12,0.88],[0,0.95-base,1.60],WHITE);rearDeck.rotation.x=0.08;
-    box(g,[1.85,0.10,2.6],[0,0.32-base,0.20],DARK);
-    for(const x of [-0.42,0.44]){pill(g,0.48,0.12,0.58,[x,0.45-base,0.15],DARK);const back=pill(g,0.47,0.70,0.12,[x,0.86-base,0.87],DARK);back.rotation.x=0.14;pill(g,0.31,0.20,0.10,[x,1.25-base,0.95],DARK);}
-    const roof=new T.Mesh(new T.PlaneGeometry(1.80,1.85),new T.MeshStandardMaterial({color:0x789197,transparent:true,opacity:0.24,roughness:0.10,metalness:0.1,side:T.DoubleSide,depthWrite:false}));roof.rotation.x=Math.PI/2;roof.position.set(0,1.61-base,0.23);g.add(roof);
-    const windGeo=new T.BufferGeometry();windGeo.setAttribute('position',new T.Float32BufferAttribute([-1.03,0.67-base,-1.20,1.03,0.67-base,-1.20,-0.93,1.60-base,-0.70,0.93,1.60-base,-0.70],3));windGeo.setIndex([0,1,2,1,3,2]);windGeo.computeVertexNormals();const glass=new T.MeshStandardMaterial({color:0xb1d1d2,transparent:true,opacity:0.035,roughness:0.06,side:T.DoubleSide,depthWrite:false});g.add(new T.Mesh(windGeo,glass));
-    const rearWindow=new T.Mesh(new T.PlaneGeometry(1.70,0.53),glass);rearWindow.position.set(0,1.29-base,1.15);rearWindow.rotation.x=-0.14;g.add(rearWindow);
-    for(const side of [-1,1]){box(g,[0.46,0.04,0.035],[side*0.62,0.67-base,-2.35],new T.MeshBasicMaterial({color:0xf2eee0}));box(g,[0.62,0.04,0.04],[side*0.54,0.81-base,2.36],new T.MeshBasicMaterial({color:0xf44d3b}));}
-    g.traverse(o=>{if(o instanceof T.Mesh)o.castShadow=true;});
+    this.shell.add(makeRoadsterBody());
+    // The seat camera uses the fitted cockpit; mirror cameras also see the exterior.
+    this.shell.traverse(o=>o.layers.set(1));this.scene.add(this.shell);
   }
   private makeCockpit() {
     this.scene.add(this.cockpit);
+    box(this.cockpit,[1.78,0.08,2.6],[0,-0.06,0.15],DARK);
     // Bodywork is visible from the driver's seat. The main camera is never a chase camera.
     const hood=pill(this.cockpit,1.86,0.16,1.3,[0,0.28,-2.5],WHITE);hood.rotation.x=-0.035;
     box(this.cockpit,[0.07,0.018,0.95],[-0.61,0.4,-1.96],mat(0x9da7a4,0.4,0.7));box(this.cockpit,[0.07,0.018,0.95],[0.61,0.4,-1.96],mat(0x9da7a4,0.4,0.7));
@@ -160,13 +141,14 @@ export class View {
     pill(this.wheel,0.18,0.125,0.03,[0,0,-0.006],mat(0x333c38));
     box(this.wheel,[0.035,0.11,0.014],[0,-0.015,0.036],mat(0xd1d9d0,0.4,0.7));box(this.wheel,[0.092,0.016,0.014],[0,0.04,0.036],mat(0xd1d9d0,0.4,0.7));
     for(const side of [-1,1])box(this.cockpit,[0.23,0.055,0.12],[side*1.12,0.97,-0.98],DARK);
-    this.makeMirror([-1.24,1.00,-0.84],0.34,0.19,[-1.24,0.60,-0.84],[-0.15,-0.035,1],true);
-    this.makeMirror([1.24,1.00,-0.84],0.34,0.19,[1.24,0.60,-0.84],[0.15,-0.035,1],true);
+    this.makeMirror([-1.24,1.00,-0.84],0.34,0.19,[-1.24,0.60,-0.84],[-0.10,-0.065,1],true);
+    this.makeMirror([1.24,1.00,-0.84],0.34,0.19,[1.24,0.60,-0.84],[0.10,-0.065,1],true);
     this.makeMirror([-0.02,1.08,-0.76],0.42,0.12,[-0.02,0.68,-0.76],[0,-0.06,1],false);
   }
   private makeMirror(pos:number[],w:number,h:number,offset:number[],aim:number[],side:boolean) {
     const target=new T.WebGLRenderTarget(side?512:640,side?288:180);target.texture.colorSpace=T.SRGBColorSpace;
     const camera=new T.PerspectiveCamera(side?52:42,w/h,0.15,1000);
+    camera.layers.enable(1);
     pill(this.cockpit,w+0.045,h+0.045,0.05,[pos[0],pos[1],pos[2]-0.075],mat(0x192321,0.3,0.3));
     const mirrorMat=new T.MeshBasicMaterial({map:target.texture,toneMapped:false});target.texture.wrapS=T.RepeatWrapping;target.texture.repeat.x=-1;target.texture.offset.x=1;
     const mesh=new T.Mesh(roundedFace(w,h,0.024),mirrorMat);mesh.position.set(...pos as [number,number,number]);this.cockpit.add(mesh);
@@ -268,13 +250,13 @@ export class View {
     this.wheel.rotation.z=-s.steering*16;
     if(now-this.lastScreens>50){this.drawDriver();this.drawNavigation();this.lastScreens=now;}
     if(now-this.lastMirror>(this.quality==='high'?33:66)) {
-      this.cockpit.visible=false;
+      for(const m of this.mirrors)m.mesh.visible=false;
       for(const m of this.mirrors) {
         m.camera.position.copy(m.offset).applyQuaternion(s.rotation).add(s.position);
         m.camera.up.copy(UP).applyQuaternion(s.rotation);m.camera.lookAt(m.camera.position.clone().add(m.aim.clone().applyQuaternion(s.rotation)));
         this.renderer.setRenderTarget(m.target);this.renderer.render(this.scene,m.camera);
       }
-      this.cockpit.visible=true;this.lastMirror=now;
+      for(const m of this.mirrors)m.mesh.visible=true;this.lastMirror=now;
     }
     this.renderer.setRenderTarget(null);this.renderer.render(this.scene,this.camera);
   }

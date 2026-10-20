@@ -13,15 +13,14 @@ app.innerHTML=`
     <div class="start-card"><div class="card-top"><span>驾驶准备</span></div><p class="start-note">跟随导航，留意后视镜。<br>任何擦碰都会结束本次旅程。</p><div class="key-grid"><div><kbd>D</kbd><kbd>F</kbd><span>左 / 右转向</span></div><div><kbd>J</kbd><kbd>K</kbd><span>油门 / 刹车</span></div><div><kbd>Q—P [ ]</kbd><span>起飞推力</span></div><div><kbd>Z—M , . /</kbd><span>抓地推力</span></div></div><div class="space-note"><kbd>SPACE</kbd><span>加重当前操作 · 其他键暂停</span></div><button id="start-button" class="primary" disabled><span id="loading-label">准备道路与驾驶舱…</span><span>↗</span></button><div class="start-footer"><span>80 km/h 滚动起步</span><span>桌面键盘</span></div></div>
   </section>
   <div id="loading-error" class="error" hidden></div>
-  <div id="overlay" class="overlay" hidden><section class="modal"><div class="eyebrow" id="modal-eyebrow">TAKE A BREATH</div><h2 id="modal-title">旅程暂停</h2><p id="modal-description">路况与燃料已冻结。准备好后，继续驾驶。</p><div id="result-stats" hidden><div><span>本次旅程</span><strong id="result-distance">0.00<small>km</small></strong></div><div><span>最高纪录</span><strong id="best-distance">0.00<small>km</small></strong></div></div><div id="settings" hidden><label>车辆音效<input id="effects" type="checkbox" checked></label><label>导航语音<input id="voice" type="checkbox" checked></label><label>画面质量<select id="quality"><option value="high">高 · 镜面30 FPS</option><option value="low">低 · 镜面15 FPS</option></select></label><button id="fullscreen" class="secondary">切换全屏 ↗</button></div><button id="resume-button" class="primary"><span>继续驾驶</span><span>→</span></button><button id="restart-button" class="secondary">开启新的旅程 ↗</button><p class="modal-footnote">继续、重开与设置请用鼠标操作。</p></section></div>
+  <div id="overlay" class="overlay" hidden><section class="modal"><div class="eyebrow" id="modal-eyebrow">TAKE A BREATH</div><h2 id="modal-title">旅程暂停</h2><p id="modal-description">路况与燃料已冻结。准备好后，继续驾驶。</p><div id="result-stats" hidden><div><span>本次旅程</span><strong id="result-distance">0.00<small>km</small></strong></div></div><div id="settings" hidden><label>车辆音效<input id="effects" type="checkbox" checked></label><label>导航语音<input id="voice" type="checkbox" checked></label><label>画面质量<select id="quality"><option value="high">高 · 镜面30 FPS</option><option value="low">低 · 镜面15 FPS</option></select></label><button id="fullscreen" class="secondary">切换全屏 ↗</button></div><button id="resume-button" class="primary"><span>继续驾驶</span><span>→</span></button><button id="restart-button" class="secondary">开启新的旅程 ↗</button><p class="modal-footnote">继续、重开与设置请用鼠标操作。</p></section></div>
   <div id="desktop-hint">本游戏需要桌面键盘。请使用横向宽屏体验完整驾驶舱。</div>
 `;
 
 const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id)! as T;
 const keys=new Set<string>();const blockedUntilRelease=new Set<string>();
 let state:'loading'|'ready'|'running'|'paused'|'failed'='loading';let sim:Simulation,view:View;
-const audio=new AudioSystem();let accumulator=0,lastTime=performance.now(),best=0;let lastUI=0;
-try{best=Number(localStorage.getItem('fly-roadster-best')||0);}catch{}
+const audio=new AudioSystem();let accumulator=0,lastTime=performance.now();let lastUI=0;
 const seed=()=>crypto.getRandomValues(new Uint32Array(1))[0];
 function clearInput(){for(const k of keys)blockedUntilRelease.add(k);keys.clear();if(sim){sim.rawInput=controlsFromKeys(keys);sim.input=controlsFromKeys(keys);}accumulator=0;}
 function openOverlay(mode:'pause'|'settings'|'failure') {
@@ -35,8 +34,8 @@ function pause(settings=false) {if(state!=='running'&&state!=='paused'&&!(settin
 function resume(){if(state==='failed'||state==='loading')return;$('overlay').hidden=true;$('intro').hidden=true;clearInput();state='running';lastTime=performance.now();audio.start();}
 function restart() {clearInput();audio.reset();sim.dispose();sim=new Simulation(seed());view.setSimulation(sim);state='paused';resume();}
 function fail() {
-  state='failed';clearInput();audio.silence();best=Math.max(best,sim.distance);try{localStorage.setItem('fly-roadster-best',String(best));}catch{}
-  $('result-distance').innerHTML=`${(sim.distance/1000).toFixed(2)}<small>km</small>`;$('best-distance').innerHTML=`${(best/1000).toFixed(2)}<small>km</small>`;openOverlay('failure');
+  state='failed';clearInput();audio.silence();
+  $('result-distance').innerHTML=`${(sim.distance/1000).toFixed(2)}<small>km</small>`;openOverlay('failure');
 }
 window.addEventListener('keydown',e=>{
   if(state!=='loading')e.preventDefault();

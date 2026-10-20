@@ -52,8 +52,8 @@ npm run build
 
 ## GitHub Pages
 
-项目完全在浏览器运行，不需要后端。资源使用相对路径，可部署在 GitHub Pages 的仓库子目录。
+项目完全在浏览器运行，不需要后端，不保存历史纪录或游戏存档。资源使用相对路径，可部署在 GitHub Pages 的仓库子目录。
 
-仓库为 `zihenyag/Fly_Roadster`。推送到 `main` 后，`.github/workflows/pages.yml` 会运行测试、构建并发布 `dist/`。也可在 Actions 中手动运行部署。如果仓库尚未启用 Pages 且自动启用受权限限制，在仓库 **Settings → Pages → Build and deployment → Source** 选择 **GitHub Actions**，然后重新运行工作流。
+仓库为 `zihenyag/Fly_Roadster`。推送到 `main` 后，`.github/workflows/pages.yml` 会运行测试、构建并发布 `dist/`。也可在 Actions 中手动运行部署。首次部署前，在仓库 **Settings → Pages → Build and deployment → Source** 选择 **GitHub Actions**，然后运行工作流。
 
 预期访问地址为 `https://zihenyag.github.io/Fly_Roadster/`；实际部署状态以 GitHub Actions 的部署结果为准。仅上传 TypeScript 源文件或双击打开 `index.html` 不能替代构建与静态托管。

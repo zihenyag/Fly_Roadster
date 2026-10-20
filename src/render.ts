@@ -1,7 +1,7 @@
 import * as T from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Simulation, NPC, Patch } from './simulation';
-import { UP, eventText, clamp, LANE_WIDTH, ROAD_HALF, RAIL_X, type RoadFrame } from './core';
+import { UP, eventText, clamp, LANE_WIDTH, ROAD_HALF, RAIL_X, MIRROR_HORIZONTAL_FOV, type RoadFrame } from './core';
 import { VEHICLES,centerHeight } from './vehicles';
 import { makeRoadsterBody } from './roadster';
 
@@ -67,6 +67,8 @@ export function makeCar(n:NPC) {
     if(n.vehicle==='sports'){part([w*0.90,0.035,0.18],[0,0.96,l/2-0.12],DARK);}
   }
   const front=-l/2-0.025,back=l/2+0.025,head=new T.MeshBasicMaterial({color:0xf8efd4}),tail=new T.MeshBasicMaterial({color:0xf63c2c});
+  if(n.kind==='v800')part([w*0.84,0.045,0.045],[0,1.08,front-0.025],head);
+  if(n.kind==='su7')part([w*0.87,0.045,0.045],[0,0.83,back+0.025],tail);
   for(const side of [-1,1]){part([w*0.22,0.07,0.04],[side*w*0.32,truck?0.84:0.70,front],head);part([w*0.22,0.075,0.04],[side*w*0.32,truck?0.63:0.70,back],tail);}
   part([0.46,0.15,0.03],[0,truck?0.58:0.49,back+0.01],mat(0xb4c9ad));
   const signals=[-1,1].map(side=>part([0.15,0.075,0.05],[side*w*0.40,truck?0.63:0.70,back+0.03],new T.MeshBasicMaterial({color:0xffad30})));signals.forEach(s=>s.visible=false);
@@ -147,7 +149,9 @@ export class View {
   }
   private makeMirror(pos:number[],w:number,h:number,offset:number[],aim:number[],side:boolean) {
     const target=new T.WebGLRenderTarget(side?512:640,side?288:180);target.texture.colorSpace=T.SRGBColorSpace;
-    const camera=new T.PerspectiveCamera(side?52:42,w/h,0.15,1000);
+    const horizontalFov=MIRROR_HORIZONTAL_FOV[side?'side':'rear'];
+    const verticalFov=T.MathUtils.radToDeg(2*Math.atan(Math.tan(T.MathUtils.degToRad(horizontalFov/2))/(w/h)));
+    const camera=new T.PerspectiveCamera(verticalFov,w/h,0.15,1000);
     camera.layers.enable(1);
     pill(this.cockpit,w+0.045,h+0.045,0.05,[pos[0],pos[1],pos[2]-0.075],mat(0x192321,0.3,0.3));
     const mirrorMat=new T.MeshBasicMaterial({map:target.texture,toneMapped:false});target.texture.wrapS=T.RepeatWrapping;target.texture.repeat.x=-1;target.texture.offset.x=1;

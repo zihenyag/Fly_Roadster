@@ -25,7 +25,7 @@ test('routes reproduce by seed and differ between seeds',()=>{
 });
 test('incremental extension has exactly the same geometry and events as bulk generation',()=>{
   const a=new Route(100),b=new Route(100);for(let n=6100;n<30000;n+=100)a.extend(n);b.extend(a.length);
-  assert.deepEqual(a.events,b.events);assert.deepEqual(a.segments,b.segments);
+  assert.deepEqual(a.events,b.events);assert.deepEqual(a.segments,b.segments);assert.deepEqual(a.hazards,b.hazards);
 });
 test('half ring inverts surface frame at 72 metres and returns onto opposite-direction road',()=>{
   const r=new Route(7);r.extend(30000);const seg=r.segments.find(s=>s.kind==='loop')!;assert.ok(seg);
@@ -34,4 +34,12 @@ test('half ring inverts surface frame at 72 metres and returns onto opposite-dir
 });
 test('1000 random seeds retain protected roads, warnings, and unblocked spaced special routes',()=>{
   for(let seed=0;seed<1000;seed++) {const r=new Route(seed);r.extend(30000);r.validate();assert.ok(r.hazards.every(h=>h.at>=300));assert.ok(r.segments.filter(s=>s.start<300).every(s=>s.kind==='road'&&!s.bump));}
+});
+test('hazards start after the protected section, recur more often, and alternate vehicle types',()=>{
+  for(let seed=0;seed<1000;seed++) {
+    const r=new Route(seed),early=r.hazards.filter(h=>h.at<2000);
+    assert.equal(early[0].at,360);assert.ok(early.length>=5);
+    for(let i=1;i<early.length;i++) {assert.notEqual(early[i].kind,early[i-1].kind);assert.ok(early[i].at-early[i-1].at>=220&&early[i].at-early[i-1].at<=340);}
+    assert.ok(r.hazards.every(h=>h.reaction>=5));
+  }
 });

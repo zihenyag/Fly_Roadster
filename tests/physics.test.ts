@@ -49,7 +49,7 @@ test('traffic contacts create persistent dynamic wrecks instead of overlapping v
 });
 test('hazard admission replays a physically safe escape before revealing the vehicle',()=>{
   const sim=new Simulation(19,true);for(const n of sim.npcs)sim.world.removeRigidBody(n.body);sim.npcs=[];
-  sim.s=500;sim.ensureWorld();const f=sim.route.sample(500);sim.body.setTranslation(f.p.clone().addScaledVector(f.up,0.85),true);sim.body.setRotation(f.q,true);sim.body.setLinvel(f.forward.clone().multiplyScalar(28),true);sim.tick(IDLE);
+  sim.s=600;sim.ensureWorld();const f=sim.route.sample(600);sim.body.setTranslation(f.p.clone().addScaledVector(f.up,0.85),true);sim.body.setRotation(f.q,true);sim.body.setLinvel(f.forward.clone().multiplyScalar(28),true);sim.traffic=false;sim.world.step();sim.tick(IDLE);sim.traffic=true;
   const helper=sim as unknown as {spawnHazard(h:unknown):void};helper.spawnHazard({id:999,at:500,kind:'v800',lane:0,reaction:5,witness:'left',side:1});
   assert.ok(sim.certifiedHazards>0,`certified=${sim.certifiedHazards}, rejected=${sim.rejectedHazards}, ${JSON.stringify(sim.witnessReports)}`);assert.equal(sim.failure,null);sim.dispose();
 });

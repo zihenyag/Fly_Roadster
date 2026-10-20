@@ -1,11 +1,11 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Vector3, Quaternion } from 'three';
-import { Route, Random, STEP, MAX_SPEED, UP, IDLE, LANE_WIDTH, ROAD_HALF, RAIL_X, clamp, fuelStep, type Controls, type RoadSegment, type RoadFrame, type HazardSpec } from './core';
+import { Route, Random, STEP, MAX_SPEED, V800_MAX_SPEED_DELTA, MIRROR_HORIZONTAL_FOV, UP, IDLE, LANE_WIDTH, ROAD_HALF, RAIL_X, clamp, smooth, fuelStep, type Controls, type RoadSegment, type RoadFrame, type HazardSpec } from './core';
 import { VEHICLES,centerHeight,type VehicleType } from './vehicles';
 
 let initialization:Promise<void>|undefined;
 export const initPhysics=()=>initialization??=RAPIER.init();
-export type NPC={id:number;kind:'normal'|'v800'|'su7';vehicle:VehicleType;crashed:boolean;crashAge:number;s:number;lane:number;targetLane:number;speed:number;cruise:number;signal:number;phase:number;age:number;side:number;body:RAPIER.RigidBody;collider:RAPIER.Collider;pos:Vector3;q:Quaternion;color:number;reaction:number;spawnS:number};
+export type NPC={id:number;kind:'normal'|'v800'|'su7';vehicle:VehicleType;crashed:boolean;crashAge:number;s:number;lane:number;entryLane:number;targetLane:number;speed:number;cruise:number;signal:number;phase:number;age:number;side:number;body:RAPIER.RigidBody;collider:RAPIER.Collider;pos:Vector3;q:Quaternion;color:number;reaction:number;spawnS:number};
 export type Patch={id:number;seg:RoadSegment;wrong:boolean;vertices:Float32Array;indices:Uint32Array;colliders:RAPIER.Collider[]};
 export type Failure={reason:string;detail:string};
 export class Simulation {
@@ -20,6 +20,7 @@ export class Simulation {
   private built=new Set<number>(); private lastPosition=new Vector3(); private liftLatch=false;
   private starved=false;
   private validating=false;
+  private hazardAttemptAt=0;
   certifiedHazards=0; rejectedHazards=0;
   incidents=0;private nextIncident=1750;private playerHandles:number[]=[];
   witnessReports:{lane:number;failure:Failure|null;lateral:number}[]=[];
@@ -77,7 +78,7 @@ export class Simulation {
     if(s<0)p.addScaledVector(f.forward,s);
     const body=this.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(p.x,p.y,p.z).setRotation(f.q));
     const collider=this.world.createCollider(RAPIER.ColliderDesc.cuboid(spec.width/2,spec.height/2,spec.length/2).setTranslation(0,-0.16,0).setMass(spec.mass).setFriction(0.7).setRestitution(0.05).setActiveCollisionTypes(RAPIER.ActiveCollisionTypes.ALL),body);
-    const npc:NPC={id:this.npcId++,kind,vehicle,crashed:false,crashAge:0,s,lane,targetLane:lane,speed,cruise:speed,side,signal:0,phase:0,age:0,body,collider,pos:p,q:f.q.clone(),color:kind==='v800'?0x182129:kind==='su7'?0x76b9cb:this.rng.pick([0xc7c3b8,0x344c51,0xe9e6dd,0x8a6261,0x36516b,0xd7ba75]),reaction,spawnS:this.s};
+    const npc:NPC={id:this.npcId++,kind,vehicle,crashed:false,crashAge:0,s,lane,entryLane:lane,targetLane:lane,speed,cruise:speed,side,signal:0,phase:0,age:0,body,collider,pos:p,q:f.q.clone(),color:kind==='v800'?0x263642:kind==='su7'?0x76b9cb:this.rng.pick([0xc7c3b8,0x344c51,0xe9e6dd,0x8a6261,0x36516b,0xd7ba75]),reaction,spawnS:this.s};
     this.npcs.push(npc);this.metadata.set(collider.handle,spec.name);return npc;
   }
   private spawnNormal(s:number) {
@@ -87,27 +88,35 @@ export class Simulation {
   }
   private spawnHazard(h:HazardSpec) {
     // Hazards are admitted once, before becoming visible, never changed to rescue the player.
+    if(this.s<300||!this.grounded||this.currentSegment.kind!=='road')return false;
+    if(this.route.events.some(e=>e.kind!=='bump'&&this.s>e.at-420&&this.s<e.at+850))return false;
+    const active=this.npcs.filter(n=>n.kind!=='normal'&&!n.crashed&&Math.abs(n.s-this.s)<140&&n.age<n.reaction+8);
+    if(active.length>=(this.s<10000?1:2))return false;
     const lane=clamp(Math.round(this.lateral/LANE_WIDTH),-1,1);
-    const free=[-1,0,1].filter(l=>l!==lane&&!this.npcs.some(n=>Math.abs(n.s-this.s)<95&&Math.abs(n.lane-l)<0.7));
-    if(!free.length)return;
-    let created:NPC;
-    if(h.kind==='v800') {
-      const v=clamp(this.speed*3.6+this.rng.range(45,75),140,300)/3.6;
-      const gap=Math.max(90,(v-this.speed)*(h.reaction+1.4)+14);
-      if(this.npcs.some(n=>Math.abs(n.s-(this.s-gap))<35&&Math.abs(n.lane-lane)<0.7))return;
-      created=this.addNPC('v800',this.s-gap,lane,v,h.side,h.reaction);
-    } else {
-      const gap=Math.max(115,this.speed*(h.reaction+1.6));
-      const spawnLane=free.includes(lane+h.side)?lane+h.side:free[0];
-      const n=this.addNPC('su7',this.s+gap,spawnLane,clamp(this.speed*3.6+30,110,260)/3.6,h.side,h.reaction);
-      n.targetLane=lane;
-      created=n;
+    const free=[-1,0,1].filter(l=>l!==lane&&!this.npcs.some(n=>Math.abs(n.s-this.s)<28+VEHICLES[n.vehicle].length/2&&Math.abs(n.lane-l)<0.7));
+    if(!free.length)return false;
+    const speed=h.kind==='v800'?this.speed+this.rng.range(14/3.6,V800_MAX_SPEED_DELTA):clamp(this.speed,35/3.6,260/3.6);
+    const baseGap=h.kind==='v800'?Math.max(52,(speed-this.speed)*(h.reaction+2.5)+6):clamp(45+this.speed*0.6,60,90);
+    const spawnLane=h.kind==='v800'?lane:free.includes(lane+h.side)?lane+h.side:free[0];
+    for(const extra of [0,12,24]) {
+      const gap=baseGap+extra;if(h.kind==='v800'&&gap>78)continue;
+      const at=this.s+(h.kind==='v800'?-gap:gap),spec=VEHICLES[h.kind==='v800'?'mpv':'sports'];
+      if(this.route.segmentAt(at).kind!=='road'||this.npcs.some(n=>Math.abs(n.s-at)<(spec.length+VEHICLES[n.vehicle].length)/2+12&&Math.abs(n.lane-spawnLane)<0.7))continue;
+      const created=this.addNPC(h.kind,at,spawnLane,speed,h.side,h.reaction);if(h.kind==='su7')created.targetLane=lane;
+      if(this.hazardVisible(created)&&free.some(target=>this.replayEscape(target,h.reaction+6,3.2))) {this.certifiedHazards++;return true;}
+      this.rejectedHazards++;this.metadata.delete(created.collider.handle);this.world.removeRigidBody(created.body);this.npcs.splice(this.npcs.indexOf(created),1);
     }
-    const valid=free.some(target=>this.replayEscape(target,h.reaction+2));
-    if(valid)this.certifiedHazards++;
-    else {this.rejectedHazards++;this.metadata.delete(created.collider.handle);this.world.removeRigidBody(created.body);this.npcs.splice(this.npcs.indexOf(created),1);}
+    return false;
   }
-  private replayEscape(lane:number,seconds:number) {
+  private hazardVisible(n:NPC) {
+    const rear=n.kind==='v800',eye=new Vector3(...(rear?[-0.02,0.68,-0.76]:[-0.39,0.63,0.42]) as [number,number,number]).applyQuaternion(this.rotation).add(this.position);
+    const delta=n.pos.clone().sub(eye),heading=new Vector3(0,0,rear?1:-1).applyQuaternion(this.rotation),right=new Vector3(1,0,0).applyQuaternion(this.rotation);
+    const distance=delta.length(),along=delta.dot(heading),fov=rear?MIRROR_HORIZONTAL_FOV.rear:112;
+    if(along<=0||Math.abs(Math.atan2(delta.dot(right),along))>fov*Math.PI/360-0.035)return false;
+    const ray=new RAPIER.Ray(eye,delta.normalize());
+    return !this.world.castRay(ray,distance-1,true,undefined,undefined,this.collider,this.body,c=>c.handle!==n.collider.handle&&this.metadata.get(c.handle)!=='车身');
+  }
+  private replayEscape(lane:number,seconds:number,reactionDelay=0) {
     const shadow=Object.assign(Object.create(Simulation.prototype),this) as Simulation;
     shadow.world=RAPIER.World.restoreSnapshot(this.world.takeSnapshot());
     shadow.body=shadow.world.getRigidBody(this.body.handle);shadow.collider=shadow.world.getCollider(this.collider.handle);
@@ -116,12 +125,15 @@ export class Simulation {
     shadow.input={...this.input};shadow.rawInput={...this.rawInput};shadow.fired=new Set(this.fired);shadow.topSeen=new Set(this.topSeen);
     shadow.npcs=this.npcs.map(n=>({...n,pos:n.pos.clone(),q:n.q.clone(),body:shadow.world.getRigidBody(n.body.handle),collider:shadow.world.getCollider(n.collider.handle)}));
     const targetSpeed=Math.max(60/3.6,this.speed);
+    const entryLane=this.lateral/LANE_WIDTH;
     for(let i=0;i<seconds/STEP&&!shadow.failure;i++) {
       const frame=shadow.route.sample(shadow.s+Math.max(25,shadow.speed*0.9));
-      const aim=frame.p.clone().addScaledVector(frame.right,lane*LANE_WIDTH).sub(shadow.position).setY(0).normalize();
+      const aim=frame.p.clone().addScaledVector(frame.right,(i*STEP<reactionDelay?entryLane:lane)*LANE_WIDTH).sub(shadow.position).setY(0).normalize();
       const f=new Vector3(0,0,-1).applyQuaternion(shadow.rotation),r=new Vector3(1,0,0).applyQuaternion(shadow.rotation);
       const err=Math.atan2(aim.dot(r),aim.dot(f));
-      shadow.tick({steer:Math.abs(err)>0.014?Math.sign(err)*(Math.abs(err)>0.13?1:0.46):0,gas:shadow.speed<targetSpeed?0.46:0,brake:shadow.speed>targetSpeed+1?0.46:0,lift:0,grip:0});
+      const controls={steer:Math.abs(err)>0.014?Math.sign(err)*(Math.abs(err)>0.13?1:0.46):0,gas:shadow.speed<targetSpeed?0.46:0,brake:shadow.speed>targetSpeed+1?0.46:0,lift:0,grip:0};
+      if(Math.abs(controls.steer)>0.5)for(const k of ['steer','gas','brake'] as const)controls[k]=Math.sign(controls[k]);
+      shadow.tick(controls);
     }
     const valid=!shadow.failure&&Math.abs(shadow.lateral-lane*LANE_WIDTH)<1.5;
     this.witnessReports.push({lane,failure:shadow.failure,lateral:shadow.lateral});if(this.witnessReports.length>8)this.witnessReports.shift();
@@ -129,7 +141,14 @@ export class Simulation {
   }
   private trafficStep(dt:number) {
     if(!this.traffic)return;
-    if(!this.validating)for(const h of this.route.hazards)if(h.at<=this.s&&!this.fired.has(h.id)) {this.fired.add(h.id);this.spawnHazard(h);}
+    if(!this.validating&&this.elapsed>=this.hazardAttemptAt) {
+      this.hazardAttemptAt=this.elapsed+0.5;
+      for(const h of this.route.hazards)if(h.at<=this.s&&!this.fired.has(h.id)) {
+        if(this.s-h.at>220){this.fired.add(h.id);continue;}
+        if(this.spawnHazard(h))this.fired.add(h.id);
+        break;
+      }
+    }
     for(const n of [...this.npcs]) {
       n.age+=dt;
       if(n.crashed) {
@@ -143,7 +162,8 @@ export class Simulation {
         const safeGap=ahead?18+(VEHICLES[n.vehicle].length+VEHICLES[ahead.vehicle].length)/2:18;
         if(ahead&&ahead.s-n.s<safeGap+n.speed*1.7)target=Math.min(target,Math.max(0,ahead.speed+(ahead.s-n.s-safeGap-n.speed*1.5)*0.8));
         if(this.s>n.s&&Math.abs(this.lateral/LANE_WIDTH-n.lane)<0.65&&this.speed>=60/3.6-0.02) {
-          const gap=this.s-n.s;target=Math.min(target,Math.max(0,this.speed+(gap-20-n.speed*1.6)*0.8));
+          const gap=this.s-n.s,followingGap=Math.max(95,20+n.speed*1.6);
+          target=Math.min(target,Math.max(0,this.speed+(gap-followingGap)*0.8));
         }
         if(n.phase===10)target=n.cruise;
         n.speed+=clamp(target-n.speed,-12*dt,2*dt);
@@ -155,17 +175,18 @@ export class Simulation {
           if(lane!==n.lane&&Math.abs(n.s-this.s)>65&&!this.npcs.some(o=>o!==n&&(Math.abs(o.lane-lane)<0.7||o.signal&&Math.abs(o.targetLane-lane)<0.7)&&Math.abs(o.s-n.s)<65)) {n.targetLane=lane;n.signal=3.2;}
         }
       }
+      if(n.kind==='v800')n.speed=Math.min(n.cruise,n.speed+2*dt,this.speed+V800_MAX_SPEED_DELTA);
       if(n.kind==='su7') {
-        if(n.phase===0) {n.speed=Math.max(12,this.speed*0.62);if(n.age>1.3)n.phase=1;}
-        if(n.phase===1) {n.lane+=(n.targetLane-n.lane)*dt*0.8;if(n.age>n.reaction+0.8)n.phase=2;}
-        if(n.phase===2) {n.speed=Math.max(4,n.speed-dt*6);n.lane+=n.side*dt*0.5;}
+        n.phase=n.age<2?0:n.age<n.reaction?1:2;
+        if(n.phase<2){n.speed=n.cruise;n.lane=n.entryLane+(n.targetLane-n.entryLane)*smooth((n.age-2)/2.4);}
+        else {const t=n.age-n.reaction;n.speed=Math.max(4,n.cruise-t*6);n.lane=n.targetLane+n.side*(t<3?0.08*Math.sin(t*4):0.10*(t-3)**2);}
       }
       n.s+=n.speed*dt;
       const seg=this.route.segmentAt(Math.max(0,n.s));
       if(n.s<this.s-270||n.s>this.s+1500||seg.kind!=='road') {this.metadata.delete(n.collider.handle);this.world.removeRigidBody(n.body);this.npcs.splice(this.npcs.indexOf(n),1);continue;}
       const f=this.route.sample(Math.max(0,n.s));n.pos.copy(f.p).addScaledVector(f.right,n.lane*LANE_WIDTH).addScaledVector(f.up,centerHeight(n.vehicle));
       if(n.s<0)n.pos.addScaledVector(f.forward,n.s);
-      n.q.copy(f.q);if(n.kind==='su7'&&n.phase===2)n.q.multiply(new Quaternion().setFromAxisAngle(UP,n.side*Math.min(1.3,(n.age-n.reaction-0.8)*0.6)));
+      n.q.copy(f.q);if(n.kind==='su7'&&n.phase===2)n.q.multiply(new Quaternion().setFromAxisAngle(UP,n.side*Math.min(1.3,(n.age-n.reaction)*0.65)));
       n.body.setNextKinematicTranslation(n.pos);n.body.setNextKinematicRotation(n.q);
     }
     if(!this.validating&&this.elapsed%1<dt) {

@@ -2,6 +2,8 @@ import { Vector3, Quaternion, Matrix4 } from 'three';
 
 export const STEP = 1 / 120;
 export const MAX_SPEED = 250 / 3.6;
+export const V800_MAX_SPEED_DELTA = 20 / 3.6;
+export const MIRROR_HORIZONTAL_FOV = { side:70, rear:44 };
 export const LANE_WIDTH = 4.6;
 export const ROAD_HALF = LANE_WIDTH*1.5+0.25;
 export const RAIL_X = ROAD_HALF+0.3;
@@ -44,7 +46,7 @@ export function frame(p:Vector3, forward:Vector3, up=UP, exists=true):RoadFrame 
 }
 export class Route {
   segments:RoadSegment[]=[]; events:RoadEvent[]=[]; hazards:HazardSpec[]=[];
-  rng:Random; private hazardRng:Random;length=0; private lastSpecial=-2000; private nextHazard=460; private hazardId=0;
+  rng:Random; private hazardRng:Random;length=0; private lastSpecial=-2000; private nextHazard=360; private hazardId=0;
   constructor(public seed:number) { this.rng=new Random(seed);this.hazardRng=new Random(seed^0x27a491); this.extend(6000); }
   extend(until:number) {
     while(this.length<until) {
@@ -70,9 +72,10 @@ export class Route {
       const blocked=this.events.some(e=>e.kind!=='bump'&&s>e.at-400&&s<e.at+850);
       if(!blocked) {
         const lane=this.hazardRng.pick([-1,0,1]);
-        this.hazards.push({id:this.hazardId++,at:s,kind:this.hazardRng.next()<0.5?'v800':'su7',lane,reaction:Math.max(3.2,5-(s-300)/15000*1.8),witness:lane<0?'right':'left',side:this.hazardRng.next()<0.5?-1:1});
+        const kind=(this.hazardId+(this.seed&1))%2===0?'v800':'su7';
+        this.hazards.push({id:this.hazardId++,at:s,kind,lane,reaction:Math.max(5,6.5-(s-300)/12000*1.5),witness:lane<0?'right':'left',side:this.hazardRng.next()<0.5?-1:1});
       }
-      this.nextHazard+= s<3000?this.hazardRng.range(400,650):s<10000?this.hazardRng.range(250,450):this.hazardRng.range(150,300);
+      this.nextHazard+= s<3000?this.hazardRng.range(220,340):s<10000?this.hazardRng.range(180,280):this.hazardRng.range(150,220);
     }
   }
   segmentAt(s:number) {
@@ -120,7 +123,7 @@ export class Route {
     for(const e of this.events) { if(e.kind!=='bump'&&e.at<2300)throw new Error('protected preview'); }
     const special=this.events.filter(e=>e.kind!=='bump');
     for(let i=1;i<special.length;i++)if(special[i].at-special[i-1].at<1500)throw new Error('fuel spacing');
-    for(const h of this.hazards) {if(h.at<300||h.reaction<3.2)throw new Error('hazard unfair');if(this.events.some(e=>e.kind!=='bump'&&h.at>e.at-400&&h.at<e.at+850))throw new Error('special blocked');}
+    for(const h of this.hazards) {if(h.at<300||h.reaction<5)throw new Error('hazard unfair');if(this.events.some(e=>e.kind!=='bump'&&h.at>e.at-400&&h.at<e.at+850))throw new Error('special blocked');}
   }
 }
 export function eventText(e:RoadEvent) {const side=e.side<0?'左':'右';return e.kind==='fork'?`前方岔路 · 靠${side}行驶`:e.kind==='loop'?`半圆环飞跃 · 落入${side}侧道路`:e.kind==='jump'?`飞越护栏 · 进入${side}侧道路`:'前方连续起伏 · 注意抓地';}

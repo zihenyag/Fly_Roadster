@@ -12,4 +12,4 @@ Condensed industrial headings (Arial Narrow / sans-serif); Chinese PingFang SC; 
 Real 3D windshield and cockpit, three independent rear-view renders. Driver instrument screen behind steering wheel; separate central navigation screen. Only the thin top status rail and a bottom control legend sit outside the cockpit.
 
 ## Components
-Start/pause/result overlays use warm paper, sharp fine rules, generous typography and orange primary actions. Functional keys only: D F J K Space + the upper/lower propulsion rows. Every other key pauses; resume is mouse-only. No music. Automatic orientation assistance never chooses heading or landing position.
+Start/pause/result overlays use warm paper, sharp fine rules, generous typography and orange primary actions. WASD and arrow keys are interchangeable for driving. Space / right Ctrl lift, either Shift grips; propulsion has one fixed output without a hold ramp. E / Esc pause. Every other key pauses; resume is mouse-only. No music. Automatic orientation assistance never chooses heading or landing position.

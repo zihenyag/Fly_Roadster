@@ -4,23 +4,28 @@ export const STEP = 1 / 120;
 export const MAX_SPEED = 250 / 3.6;
 export const V800_MAX_SPEED_DELTA = 20 / 3.6;
 export const MIRROR_HORIZONTAL_FOV = { side:70, rear:44 };
+export const FIRST_LOOP_AT = 2000;
+export const SU7_LOSS_AT = 2;
 export const LANE_WIDTH = 4.6;
 export const ROAD_HALF = LANE_WIDTH*1.5+0.25;
 export const RAIL_X = ROAD_HALF+0.3;
-export const LIFT_KEYS = new Set(['KeyQ','KeyW','KeyE','KeyR','KeyT','KeyY','KeyU','KeyI','KeyO','KeyP','BracketLeft','BracketRight']);
-export const GRIP_KEYS = new Set(['KeyZ','KeyX','KeyC','KeyV','KeyB','KeyN','KeyM','Comma','Period','Slash']);
-export const FUNCTION_KEYS = new Set(['KeyD','KeyF','KeyJ','KeyK','Space', ...LIFT_KEYS, ...GRIP_KEYS]);
+export const LIFT_KEYS = new Set(['Space','ControlRight']);
+export const GRIP_KEYS = new Set(['ShiftLeft','ShiftRight']);
+export const FUNCTION_KEYS = new Set(['KeyW','KeyS','KeyA','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight', ...LIFT_KEYS, ...GRIP_KEYS]);
 export type Controls = { steer: number; gas: number; brake: number; lift: number; grip: number };
 export const IDLE: Controls = { steer:0, gas:0, brake:0, lift:0, grip:0 };
 export function controlsFromKeys(keys: Set<string>): Controls {
-  const strength = keys.has('Space') ? 1 : 0.46;
   const any = (s:Set<string>) => [...s].some(k=>keys.has(k));
-  return { steer: ((+keys.has('KeyF'))-(+keys.has('KeyD'))) * strength,
-    gas:keys.has('KeyK') ? 0 : +keys.has('KeyJ')*strength, brake:+keys.has('KeyK')*strength,
-    lift:+any(LIFT_KEYS)*strength, grip:+any(GRIP_KEYS)*strength };
+  const brake=keys.has('KeyS')||keys.has('ArrowDown');
+  return { steer: +(keys.has('KeyD')||keys.has('ArrowRight'))-+(keys.has('KeyA')||keys.has('ArrowLeft')),
+    gas:brake?0:+(keys.has('KeyW')||keys.has('ArrowUp')),brake:+brake,
+    lift:+any(LIFT_KEYS),grip:+any(GRIP_KEYS) };
+}
+export function fuelRate(input:Controls,assisting:boolean) {
+  return (input.lift?25:0)+(input.grip?15:0)+(assisting?5:0);
 }
 export function fuelStep(fuel:number, input:Controls, assisting:boolean, dt:number) {
-  const rate = (input.lift ? (input.lift>0.5?28:14):0) + (input.grip?(input.grip>0.5?16:8):0) + (assisting?4:0);
+  const rate = fuelRate(input,assisting);
   const available = Math.min(100,fuel+6*dt);
   const factor = rate ? Math.min(1,available/(rate*dt)) : 1;
   return { fuel:Math.max(0,available-rate*dt), factor, rate };
@@ -52,16 +57,16 @@ export class Route {
     while(this.length<until) {
       const prev=this.segments.at(-1); const end=prev?this.sampleSegment(prev,prev.length):frame(new Vector3(),new Vector3(0,0,-1));
       const id=this.segments.length; let kind:RoadKind='road';
-      if(this.length>=2300 && this.length-this.lastSpecial>=1550 && this.rng.next()<0.64) {
-        kind=this.events.some(e=>e.kind==='fork') ? this.rng.pick<RoadKind>(['fork','loop','jump']) : 'fork';
-        if(this.events.some(e=>e.kind==='fork')&&!this.events.some(e=>e.kind==='loop'))kind='loop';
-        else if(this.events.some(e=>e.kind==='loop')&&!this.events.some(e=>e.kind==='jump'))kind='jump';
+      if(this.length===FIRST_LOOP_AT)kind='loop';
+      else if(this.length>FIRST_LOOP_AT && this.length-this.lastSpecial>=1550 && this.rng.next()<0.64) {
+        kind=!this.events.some(e=>e.kind==='fork')?'fork':!this.events.some(e=>e.kind==='jump')?'jump':this.rng.pick<RoadKind>(['fork','loop','jump']);
       }
       const side=this.rng.next()<0.5?-1:1;
-      const seg:RoadSegment={ id,start:this.length,length:kind==='loop'?Math.PI*36+440:kind==='fork'?420:kind==='jump'?470:360,
+      const roadLength=this.length<FIRST_LOOP_AT?Math.min(360,FIRST_LOOP_AT-this.length):360;
+      const seg:RoadSegment={ id,start:this.length,length:kind==='loop'?Math.PI*36+440:kind==='fork'?420:kind==='jump'?470:roadLength,
         kind,origin:end.p.clone(),heading:Math.atan2(-end.forward.x,-end.forward.z),turn:0,side,
         bend:kind==='road'&&this.length>=300?this.rng.range(-0.075,0.075):0,
-        bump:this.length>=300 && kind==='road'&&this.rng.next()<0.45?this.rng.range(0.04,0.14):0,
+        bump:this.length>=300 && kind==='road'&&roadLength===360&&this.rng.next()<0.45?this.rng.range(0.04,0.14):0,
         terrain:this.length<2000?'coast':this.rng.pick(['coast','mountain','bridge']) };
       if(kind!=='road') { const at=this.length+(kind==='fork'?105:kind==='jump'?150:0);this.lastSpecial=at; this.events.push({ id,at,kind,side,reserve:kind==='loop'?85:kind==='jump'?45:0 }); }
       if(seg.bump) this.events.push({id,at:this.length+95,kind:'bump',side:0,reserve:0});
@@ -120,8 +125,9 @@ export class Route {
   }
   nextEvents(s:number) { return this.events.filter(e=>e.at>s-8 && e.at-s<=(e.kind==='bump'?500:2000)).sort((a,b)=>a.at-b.at); }
   validate() {
-    for(const e of this.events) { if(e.kind!=='bump'&&e.at<2300)throw new Error('protected preview'); }
+    for(const e of this.events) { if(e.kind!=='bump'&&e.at<FIRST_LOOP_AT)throw new Error('protected preview'); }
     const special=this.events.filter(e=>e.kind!=='bump');
+    if(special[0]?.kind!=='loop'||special[0].at!==FIRST_LOOP_AT)throw new Error('first half-ring');
     for(let i=1;i<special.length;i++)if(special[i].at-special[i-1].at<1500)throw new Error('fuel spacing');
     for(const h of this.hazards) {if(h.at<300||h.reaction<5)throw new Error('hazard unfair');if(this.events.some(e=>e.kind!=='bump'&&h.at>e.at-400&&h.at<e.at+850))throw new Error('special blocked');}
   }

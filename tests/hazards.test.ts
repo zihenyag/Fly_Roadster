@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { initPhysics, Simulation, type NPC } from '../src/simulation';
-import { IDLE, STEP, V800_MAX_SPEED_DELTA, type HazardSpec } from '../src/core';
+import { IDLE, STEP, V800_MAX_SPEED_DELTA, SU7_LOSS_AT, type HazardSpec } from '../src/core';
 import { verificationControls } from '../scripts/driver';
 
 await initPhysics();
@@ -52,7 +52,7 @@ test('both admitted hazards allow at least five seconds of ordinary lane keeping
   }
 });
 
-test('SU7 remains visible before cutting in, then follows the same trajectory regardless of player speed',()=>{
+test('SU7 cuts in, loses control at 2 seconds, and keeps a fixed trajectory',()=>{
   const a=fixture(),b=fixture();
   for(const f of [a,b])assert.equal(f.helper.spawnHazard(spec(f.sim,'su7')),true);
   const na=a.sim.npcs.find(n=>n.kind==='su7')!,nb=b.sim.npcs.find(n=>n.kind==='su7')!;
@@ -60,9 +60,10 @@ test('SU7 remains visible before cutting in, then follows the same trajectory re
   for(let i=0;i<7/STEP;i++) {
     a.sim.speed=0;b.sim.speed=250/3.6;a.helper.trafficStep(STEP);b.helper.trafficStep(STEP);
     assert.equal(na.s,nb.s);assert.equal(na.lane,nb.lane);assert.equal(na.speed,nb.speed);
-    if(i<1.5/STEP)assert.equal(na.lane,initialLane);
-    if(i===Math.round(3.2/STEP))assert.ok(na.lane>0&&na.lane<initialLane);
-    if(i===Math.round(5/STEP)){assert.ok(Math.abs(na.lane-na.targetLane)<1e-8);assert.equal(na.phase,1);}
+    if(i<0.3/STEP)assert.equal(na.lane,initialLane);
+    if(i===Math.round(1/STEP))assert.ok(na.lane>0&&na.lane<initialLane);
+    if(i===Math.round(1.9/STEP)){assert.ok(Math.abs(na.lane-na.targetLane)<1e-8);assert.equal(na.phase,1);}
+    if(i===Math.round(SU7_LOSS_AT/STEP))assert.equal(na.phase,2);
   }
   assert.equal(na.phase,2);a.sim.dispose();b.sim.dispose();
 });

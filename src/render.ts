@@ -219,7 +219,7 @@ export class View {
     c.textAlign='right';c.fillStyle=s.grounded?'#9faf9f':'#ffac70';c.font='bold 26px sans-serif';c.fillText(s.grounded?'贴地行驶':'空中飞行',920,105);
     c.fillStyle='#99aaa1';c.font='21px sans-serif';c.fillText(`飞行辅助`,920,151);c.fillStyle=s.assistStatus==='稳定中'?'#ffac70':s.assistStatus==='缺油'?'#ff6654':'#c0cfc2';c.font='bold 25px sans-serif';c.fillText(s.assistStatus,920,187);
     c.fillStyle='#2c3c39';c.fillRect(35,254,890,1);
-    const status=(name:string,value:number,x:number)=>{c.textAlign='left';c.font='23px sans-serif';c.fillStyle=value?'#ffac70':'#83978c';c.fillText(name,x,300);c.fillStyle=value?(s.fuelFactor<0.2?'#ff6654':'#f4e9d1'):'#99aaa0';c.font='bold 30px sans-serif';c.fillText(value?(s.fuelFactor<0.2?'缺油':value>0.5?'重档 ↑↑':'轻档 ↑'):'未使用',x,348);};
+    const status=(name:string,value:number,x:number)=>{c.textAlign='left';c.font='23px sans-serif';c.fillStyle=value?'#ffac70':'#83978c';c.fillText(name,x,300);c.fillStyle=value?(s.fuelFactor<0.2?'#ff6654':'#f4e9d1'):'#99aaa0';c.font='bold 30px sans-serif';c.fillText(value?(s.fuelFactor<0.2?'缺油':'工作中 ↑'):'未使用',x,348);};
     status('起飞',s.rawInput.lift,42);status('抓地',s.rawInput.grip,285);
     c.fillStyle='#83978c';c.font='23px sans-serif';c.fillText('方向盘 / 踏板',575,300);c.fillStyle='#dce3d5';c.font='24px monospace';const degrees=Math.round(T.MathUtils.radToDeg(s.steering*16));c.fillText(`${degrees<0?'左':degrees>0?'右':''}${Math.abs(degrees)}° · ${s.rawInput.brake?'刹车':s.rawInput.gas?'油门':'滑行'}`,575,348);
     this.driverTexture.needsUpdate=true;

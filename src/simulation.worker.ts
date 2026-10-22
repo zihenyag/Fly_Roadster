@@ -4,6 +4,7 @@ import type { StatePacket, WorkerRequest, WorkerReply } from './drivingState';
 
 let sim:Simulation|undefined,running=false,controls:Controls={...IDLE},lastTime=0,accumulator=0,lastSend=0,tickMaxMs=0;
 let timer:ReturnType<typeof setTimeout>|undefined;
+let pilot:import('../scripts/autopilot').Autopilot|undefined;
 const sentPatches=new Set<number>();
 const send=(reply:WorkerReply)=>postMessage(reply);
 function publish(ready=false,simulatedAt=performance.now(),reset=false) {
@@ -22,7 +23,7 @@ function pump() {
   const now=performance.now();
   if(sim&&running) {
     accumulator+=Math.min(.1,(now-lastTime)/1000);
-    while(accumulator>=STEP&&!sim.failure){const start=performance.now();sim.tick(controls);tickMaxMs=Math.max(tickMaxMs,performance.now()-start);accumulator-=STEP;}
+    while(accumulator>=STEP&&!sim.failure){const start=performance.now();sim.tick(pilot?pilot.controls(sim):controls);tickMaxMs=Math.max(tickMaxMs,performance.now()-start);accumulator-=STEP;}
     if(sim.failure){running=false;accumulator=0;publish();}
     else if(now-lastSend>=1000/60)publish(false,now);
   }
@@ -32,6 +33,7 @@ globalThis.onmessage=async({data}:{data:WorkerRequest})=>{
   try {
     if(data.type==='init'){await initPhysics();sim=new Simulation(data.seed);sim.warmValidation();lastTime=performance.now();publish(true);return;}
     if(!sim)return;
+    if(data.type==='autoplay'){const {Autopilot}=await import('../scripts/autopilot');pilot=new Autopilot();send({type:'autoplay-ready'});return;}
     if(data.type==='input'){controls=data.controls;return;}
     controls={...IDLE};sim.rawInput={...IDLE};sim.input={...IDLE};accumulator=0;lastTime=performance.now();running=data.type==='resume';
     if(timer){clearTimeout(timer);timer=undefined;}publish(false,performance.now(),true);if(running)pump();

@@ -13,8 +13,8 @@ export type StatePacket={
   routeLength:number;patches:{id:number;segment:number;wrong:boolean;vertices:Float32Array;indices:Uint32Array}[];patchIds:number[];
   sentAt:number;tickMaxMs:number;reset?:boolean;
 };
-export type WorkerRequest={type:'init';seed:number}|{type:'input';controls:Controls}|{type:'pause'|'resume'};
-export type WorkerReply={type:'state';ready:boolean;packet:StatePacket}|{type:'error';message:string};
+export type WorkerRequest={type:'init';seed:number}|{type:'input';controls:Controls}|{type:'pause'|'resume'}|{type:'autoplay'};
+export type WorkerReply={type:'state';ready:boolean;packet:StatePacket}|{type:'error';message:string}|{type:'autoplay-ready'};
 
 /** Small render-only mirror of the worker's authoritative simulation. */
 export class GameState implements DrivingState {
@@ -53,10 +53,12 @@ export class GameState implements DrivingState {
 
 export class SimulationClient {
   state:GameState;worker:Worker;ready:Promise<void>;onUpdate=()=>{};onError=(error:Error)=>console.error(error);
+  private autoplayReady=()=>{};
   constructor(seed:number) {
     this.state=new GameState(seed);this.worker=new Worker(new URL('./simulation.worker.ts',import.meta.url),{type:'module'});
     this.ready=new Promise<void>((resolve,reject)=>{
       this.worker.onmessage=({data}:{data:WorkerReply})=>{
+        if(data.type==='autoplay-ready'){this.autoplayReady();return;}
         if(data.type==='error'){const error=new Error(data.message);reject(error);this.onError(error);return;}
         this.state.apply(data.packet);if(data.ready)resolve();this.onUpdate();
       };
@@ -65,5 +67,6 @@ export class SimulationClient {
     this.send({type:'init',seed});
   }
   send(message:WorkerRequest){this.worker.postMessage(message);}
+  enableAutoplay(){return new Promise<void>(resolve=>{this.autoplayReady=resolve;this.send({type:'autoplay'});});}
   dispose(){this.worker.onmessage=null;this.worker.onerror=null;this.worker.terminate();}
 }

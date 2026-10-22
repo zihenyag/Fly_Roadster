@@ -20,9 +20,11 @@ app.innerHTML=`
 const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id)! as T;
 $<HTMLSelectElement>('quality').insertAdjacentHTML('afterbegin','<option value="auto" selected>自动 · 自适应画质</option>');
 const keys=new Set<string>();const blockedUntilRelease=new Set<string>();
+const autoplay=/\/auto\/?$/.test(location.pathname)||(import.meta.env.DEV&&new URLSearchParams(location.search).get('autoplay')==='1');
+let firstSeed=true,autoRestart=true;
 let state:'loading'|'ready'|'running'|'paused'|'failed'='loading';let sim:GameState,view:View,client:SimulationClient;
 const audio=new AudioSystem();let lastUI=0;let needsRender=true;
-const seed=()=>crypto.getRandomValues(new Uint32Array(1))[0];
+const seed=()=>{const fixed=new URLSearchParams(location.search).get('seed');if(import.meta.env.DEV&&autoplay&&firstSeed&&fixed!==null){firstSeed=false;return Number(fixed)>>>0;}firstSeed=false;return crypto.getRandomValues(new Uint32Array(1))[0];};
 function sendInput(){client?.send({type:'input',controls:controlsFromKeys(keys)});}
 function clearInput(){for(const k of keys)blockedUntilRelease.add(k);keys.clear();if(sim){sim.rawInput=controlsFromKeys(keys);sim.input=controlsFromKeys(keys);}sendInput();needsRender=true;}
 function openOverlay(mode:'pause'|'settings'|'failure') {
@@ -32,10 +34,10 @@ function openOverlay(mode:'pause'|'settings'|'failure') {
   $('modal-title').textContent=mode==='failure'?sim.failure?.reason||'旅程结束':mode==='settings'?'驾驶设置':'旅程暂停';
   $('modal-description').textContent=mode==='failure'?sim.failure?.detail||'':mode==='settings'?'保持你的节奏。音效、导航和画质分别控制。':'路况与燃料已冻结。准备好后，继续驾驶。';
 }
-function pause(settings=false) {if(state!=='running'&&state!=='paused'&&!(settings&&state==='ready'))return;state='paused';clearInput();client.send({type:'pause'});audio.silence();openOverlay(settings?'settings':'pause');}
-function resume(){if(state==='failed'||state==='loading')return;$('overlay').hidden=true;$('intro').hidden=true;clearInput();state='running';client.send({type:'resume'});audio.start();}
+function pause(settings=false) {autoRestart=false;if(state!=='running'&&state!=='paused'&&!(settings&&state==='ready'))return;state='paused';clearInput();client.send({type:'pause'});audio.silence();openOverlay(settings?'settings':'pause');}
+function resume(){if(state==='failed'||state==='loading')return;autoRestart=true;$('overlay').hidden=true;$('intro').hidden=true;clearInput();state='running';client.send({type:'resume'});audio.start();}
 async function prepareSimulation(){
-  client=new SimulationClient(seed());await client.ready;sim=client.state;
+  client=new SimulationClient(seed());await client.ready;sim=client.state;if(autoplay)await client.enableAutoplay();
   client.onUpdate=()=>{if(sim.failure&&state==='running')fail();if(state!=='running')needsRender=true;};
   client.onError=error=>{pause();$('modal-description').textContent=`驾驶线程发生错误：${error.message}`;};
 }
@@ -43,6 +45,7 @@ async function restart() {if(state==='loading')return;clearInput();audio.reset()
 function fail() {
   state='failed';clearInput();audio.silence();
   $('result-distance').innerHTML=`${(sim.distance/1000).toFixed(2)}<small>km</small>`;openOverlay('failure');
+  if(autoplay)setTimeout(()=>{if(state==='failed'&&autoRestart)$('restart-button').click();},2500);
 }
 window.addEventListener('keydown',e=>{
   if(state!=='loading')e.preventDefault();
@@ -51,7 +54,7 @@ window.addEventListener('keydown',e=>{
   if(state==='running'&&!blockedUntilRelease.has(e.code)){keys.add(e.code);sendInput();}
 });
 window.addEventListener('keyup',e=>{keys.delete(e.code);blockedUntilRelease.delete(e.code);sendInput();});
-window.addEventListener('blur',()=>{pause();});document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});
+window.addEventListener('blur',()=>{if(!autoplay)pause();});document.addEventListener('visibilitychange',()=>{if(document.hidden&&!autoplay)pause();});
 $('start-button').onclick=resume;$('resume-button').onclick=resume;$('restart-button').onclick=restart;
 $('pause-button').onclick=()=>pause();$('settings-button').onclick=()=>pause(true);
 $<HTMLInputElement>('effects').onchange=e=>{audio.effects=(e.target as HTMLInputElement).checked;};
@@ -68,6 +71,7 @@ async function boot() {
     // Read-only telemetry and deterministic harness for local verification; omitted from production.
     if(import.meta.env.DEV)Object.defineProperty(window,'__roadster',{get:()=>({sim,view,state,keys,controlsFromKeys,pause,resume,client})});
     requestAnimationFrame(loop);
+    if(autoplay)$('start-button').click();
   } catch(error) {console.error(error);$('loading-error').hidden=false;$('loading-error').textContent=`驾驶舱未能启动：${String(error)}。请使用支持 WebGL 2 的浏览器。`; $('loading-label').textContent='启动失败';}
 }
 function loop(now:number) {

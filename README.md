@@ -52,6 +52,12 @@ npm run dev -- --port 5173
 
 ## 验证
 
+自动驾驶：[https://zihenyag.github.io/Fly_Roadster/auto](https://zihenyag.github.io/Fly_Roadster/auto)。直接访问该路由会在标准游戏界面开始自动驾驶，保留完整车流、燃料与失败判定，实时连续行驶，超过10 km后继续跑；失败后等待2.5秒开启新旅程。暂停按钮或非功能键仍会暂停，自动模式允许窗口失焦后继续跑。普通游戏页面没有自动驾驶入口，仍为手动驾驶。
+
+本地可打开 `http://127.0.0.1:5173/auto?seed=0`；固定种子参数只在开发模式生效。构建会生成独立的 `auto/index.html`，GitHub Pages直接访问及刷新此路由都可用。
+
+`npm run play -- 0 12000` 使用同一物理和自动驾驶脚本，从起点带完整车流跑至12 km，逐物理帧记录输入与车况到 `output/autoplay/`，并保留失败原因与路况事件。
+
 ```sh
 npm test
 npm run verify

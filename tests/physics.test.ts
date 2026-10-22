@@ -23,8 +23,8 @@ test('magnetic half-ring constraint permits inversion without assistance fightin
   sim.tick({...IDLE,grip:1});assert.equal(sim.assistStatus,'环面约束');assert.ok(UP.clone().applyQuaternion(sim.rotation).y<0);assert.equal(sim.failure,null);sim.dispose();
 });
 test('inverted loop and cross-barrier flight can land with the physical floor enabled',()=>{
-  for(const seed of [0,32,33,39,40,47]) {
-    const sim=new Simulation(seed,false);const seen=new Set<string>(),target=seed===39?15000:8000;
+  for(const seed of [0,5,11,32,33,39,40,47]) {
+    const sim=new Simulation(seed,false);const seen=new Set<string>(),target=seed===11?20000:seed===39?15000:8000;
     for(let i=0;i<120*600&&!sim.failure&&sim.s<target;i++) {seen.add(sim.currentSegment.kind);sim.tick(verificationControls(sim));}
     assert.equal(sim.failure,null,`seed=${seed}, s=${sim.s}, ${JSON.stringify(sim.failure)}`);
     assert.ok(sim.s>=target);assert.ok(seen.has('loop')&&seen.has('jump'));sim.dispose();

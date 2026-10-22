@@ -1,0 +1,45 @@
+{
+  "date": "2026-10-22",
+  "seed": 2964724612,
+  "viewport": [1440, 900],
+  "devicePixelRatio": 1,
+  "quality": "high",
+  "measuredFrames": 170,
+  "method": "Same browser, route seed, stationary starting scene, full-resolution mirrors. RAF samples after 10 warm-up frames; no simulation progression during render timing.",
+  "before": {
+    "drawCallsMean": 424.6471,
+    "drawCallsP95": 514,
+    "cpuRenderMeanMs": 3.1224,
+    "cpuRenderP95Ms": 5,
+    "frameMeanMs": 16.6612,
+    "gpuGeometries": 340
+  },
+  "after": {
+    "drawCallsMean": 161,
+    "drawCallsP95": 175,
+    "cpuRenderMeanMs": 2.4847,
+    "cpuRenderP95Ms": 3.6,
+    "frameMeanMs": 16.6618,
+    "gpuGeometries": 107
+  },
+  "note": "The before/after section measures the renderer optimization before the final mirror support and worker changes. Both runs reached this display's roughly 60 Hz limit. Draw calls fell about 62 percent and CPU render time about 20 percent. Adaptive resolution and stopping idle rendering are excluded from that fixed-quality comparison.",
+  "workerAcceleration": {
+    "seed": 2964724612,
+    "viewport": [1200,1190],
+    "devicePixelRatio": 2,
+    "quality": "auto",
+    "method": "Continuous full throttle with a simple centerline steering harness, normal traffic and hazard admission enabled. Stopped at an ordinary traffic collision at 655 m; this measures rendering during acceleration and is not a safe-driving gameplay replay.",
+    "distanceMetres": 655.0767,
+    "speedKmh": 249.9792,
+    "measuredFrames": 685,
+    "frameMeanMs": 16.6670,
+    "frameP95Ms": 17.6,
+    "frameMaxMs": 17.7,
+    "cpuRenderMeanMs": 2.2361,
+    "cpuRenderP95Ms": 3.5,
+    "cpuRenderMaxMs": 15.7,
+    "workerTickMaxMs": 75.7,
+    "mainThreadLongTasksOver50Ms": 0,
+    "scope": "One local browser and device; no cross-device FPS guarantee. Physics and all escape replays retain the same 120 Hz fixed step."
+  }
+}

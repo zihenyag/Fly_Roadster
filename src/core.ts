@@ -4,6 +4,9 @@ export const STEP = 1 / 120;
 export const MAX_SPEED = 250 / 3.6;
 export const V800_MAX_SPEED_DELTA = 20 / 3.6;
 export const MIRROR_HORIZONTAL_FOV = { side:70, rear:44 };
+export const MIRROR_HEIGHT = { side:0.38, rear:0.80 };
+export const MIRROR_SIDE = { x:1.24, z:-0.94, outward:0.5 };
+export const WINDSHIELD_TOP=1.35;
 export const FIRST_LOOP_AT = 2000;
 export const SU7_LOSS_AT = 2;
 export const LANE_WIDTH = 4.6;
@@ -89,25 +92,31 @@ export class Route {
     return this.segments[lo];
   }
   sample(s:number, branch=false):RoadFrame { const seg=this.segmentAt(s);return this.sampleSegment(seg,clamp(s-seg.start,0,seg.length),branch); }
+  positionOnSegment(seg:RoadSegment,t:number,wrong=false,out=new Vector3()) {
+    let x=0,y=0,z=t;
+    if(seg.kind==='road') {x=seg.bend*t*t/360;if(seg.bump&&t>70&&t<260)y=seg.bump*Math.sin((t-70)*0.72)*Math.sin(Math.PI*(t-70)/190)**2;}
+    if(seg.kind==='fork')x=(wrong?-seg.side:seg.side)*42*smooth((t-65)/240);
+    if(seg.kind==='jump') {x=seg.side*22*smooth((t-150)/100);if(t>=150&&t<250)y=5*Math.sin(Math.PI*(t-150)/100);}
+    if(seg.kind==='loop') {const arc=Math.PI*36;if(t<=arc){y=36*(1-Math.cos(t/36));z=36*Math.sin(t/36);}else{const u=t-arc;x=seg.side*24*smooth(u/110);y=u<110?8+64*(1-u/110)**2:8;z=-u;}}
+    const sin=Math.sin(seg.heading),cos=Math.cos(seg.heading);out.copy(seg.origin);out.x+=cos*x;out.z-=sin*x;out.y+=y;out.x-=sin*z;out.z-=cos*z;return out;
+  }
   sampleSegment(seg:RoadSegment,t:number,wrong=false):RoadFrame {
     const f=new Vector3(-Math.sin(seg.heading),0,-Math.cos(seg.heading));const r=f.clone().cross(UP);
-    let x=0,y=0,z=t;let dir=f.clone(),up=UP.clone(),exists=true;
+    let dir=f.clone(),up=UP.clone(),exists=true;
     if(seg.kind==='road') {
-      x=seg.bend*t*t/360; dir.addScaledVector(r,2*seg.bend*t/360).normalize();
-      if(seg.bump && t>70 && t<260) { const w=Math.sin(Math.PI*(t-70)/190)**2; y=seg.bump*Math.sin((t-70)*0.72)*w; }
+      dir.addScaledVector(r,2*seg.bend*t/360).normalize();
     }
-    if(seg.kind==='fork') { const side=wrong?-seg.side:seg.side; x=side*42*smooth((t-65)/240);const u=clamp((t-65)/240,0,1);dir.addScaledVector(r,side*42*6*u*(1-u)/240).normalize(); }
+    if(seg.kind==='fork') { const side=wrong?-seg.side:seg.side;const u=clamp((t-65)/240,0,1);dir.addScaledVector(r,side*42*6*u*(1-u)/240).normalize(); }
     if(seg.kind==='jump') {
-      x=seg.side*22*smooth((t-150)/100);
-      if(t>=150&&t<250) { exists=false; y=5*Math.sin(Math.PI*(t-150)/100); }
+      if(t>=150&&t<250)exists=false;
       const u=clamp((t-150)/100,0,1);dir.addScaledVector(r,seg.side*22*6*u*(1-u)/100).normalize();
     }
     if(seg.kind==='loop') {
       const arc=Math.PI*36;
-      if(t<=arc) { const a=t/36;y=36*(1-Math.cos(a));z=36*Math.sin(a);dir=f.clone().multiplyScalar(Math.cos(a)).addScaledVector(UP,Math.sin(a));up=UP.clone().multiplyScalar(Math.cos(a)).addScaledVector(f,-Math.sin(a)); }
-      else { const u=t-arc;x=seg.side*24*smooth(u/110);y=u<110?8+64*(1-u/110)**2:8;z=-u;dir=f.clone().negate();exists=u>=110; }
+      if(t<=arc) { const a=t/36;dir=f.clone().multiplyScalar(Math.cos(a)).addScaledVector(UP,Math.sin(a));up=UP.clone().multiplyScalar(Math.cos(a)).addScaledVector(f,-Math.sin(a)); }
+      else {dir=f.clone().negate();exists=t-arc>=110;}
     }
-    return frame(seg.origin.clone().addScaledVector(r,x).addScaledVector(UP,y).addScaledVector(f,z),dir,up,exists);
+    return frame(this.positionOnSegment(seg,t,wrong),dir,up,exists);
   }
   project(p:Vector3,near:number,wide=false) {
     const active=this.segmentAt(near);const arc=Math.PI*36;
@@ -118,7 +127,8 @@ export class Route {
     }
     let best=near,dist=Infinity;
     const start=Math.max(0,near-(wide?60:12)),end=Math.min(this.length-1,near+(wide?260:45));
-    for(let s=start;s<=end;s+=wide?3:1.5) {const d=this.sample(s).p.distanceToSquared(p);if(d<dist){dist=d;best=s;}}
+    const candidate=new Vector3();
+    for(let s=start;s<=end;s+=wide?3:1.5) {const seg=this.segmentAt(s);const d=this.positionOnSegment(seg,clamp(s-seg.start,0,seg.length),false,candidate).distanceToSquared(p);if(d<dist){dist=d;best=s;}}
     let f=this.sample(best);
     best=clamp(best+clamp(p.clone().sub(f.p).dot(f.forward),-3,3),start,end);f=this.sample(best);
     return {s:best,frame:f,lateral:p.clone().sub(f.p).dot(f.right),height:p.clone().sub(f.p).dot(f.up),distance:Math.sqrt(dist)};

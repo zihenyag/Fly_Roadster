@@ -1,15 +1,26 @@
 import * as T from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { Simulation, NPC, Patch } from './simulation';
-import { UP, eventText, clamp, LANE_WIDTH, ROAD_HALF, RAIL_X, MIRROR_HORIZONTAL_FOV, type RoadFrame } from './core';
+import type { DrivingState, TrafficVehicle as NPC, RoadPatch as Patch } from './drivingState';
+import { UP, eventText, clamp, LANE_WIDTH, ROAD_HALF, RAIL_X, MIRROR_HORIZONTAL_FOV, MIRROR_HEIGHT, MIRROR_SIDE, WINDSHIELD_TOP, type RoadFrame } from './core';
 import { VEHICLES,centerHeight } from './vehicles';
 import { makeRoadsterBody } from './roadster';
+import { roadDeckGeometry } from './roadGeometry';
+import { RoadClearance, sceneryForSegment, type SceneryItem } from './scenery';
 
-const mat=(color:number,roughness=0.65,metalness=0)=>new T.MeshStandardMaterial({color,roughness,metalness});
+const materials=new Map<string,T.MeshStandardMaterial>();
+const mat=(color:number,roughness=0.65,metalness=0)=>{const key=`${color}:${roughness}:${metalness}`;let m=materials.get(key);if(!m){m=new T.MeshStandardMaterial({color,roughness,metalness});materials.set(key,m);}return m;};
 const DARK=mat(0x151d1d),GLASS=mat(0x334d55,0.16,0.4),WHITE=mat(0xe9e5dc,0.25,0.45),RUBBER=mat(0x111717);
 const ROAD=mat(0x515655,0.97),RAIL=mat(0xa4aaa2,0.42,0.5),LINE=new T.MeshBasicMaterial({color:0xe9e7d8});
+const CONCRETE=mat(0x737972,0.96),ROCK=mat(0xb0ab95,0.98),LEAVES=mat(0x385649,0.98),BARK=mat(0x6c6d58);
 const boxGeometry=new T.BoxGeometry(1,1,1);
+const rockGeometry=new T.IcosahedronGeometry(1,0),treeGeometry=new T.ConeGeometry(1,1,7);
+const sharedGeometry=new Set<T.BufferGeometry>([boxGeometry,rockGeometry,treeGeometry]);
 function box(parent:T.Object3D,size:number[],pos:number[],material:T.Material) {const m=new T.Mesh(boxGeometry,material);m.scale.set(size[0],size[1],size[2]);m.position.set(pos[0],pos[1],pos[2]);parent.add(m);return m;}
+function mirrorSupport(parent:T.Object3D,side:number,offset=0) {
+  box(parent,[.08,.12,.12],[side*.98,.12+offset,-.80],DARK);
+  const start=new T.Vector3(side*.99,.17+offset,-.80),end=new T.Vector3(side*(MIRROR_SIDE.x-.05),MIRROR_HEIGHT.side-.13+offset,MIRROR_SIDE.z-.05);
+  const arm=box(parent,[.045,start.distanceTo(end),.055],start.clone().lerp(end,.5).toArray(),DARK);arm.quaternion.setFromUnitVectors(UP,end.sub(start).normalize());
+}
 function rounded(w:number,h:number,d:number,r:number) {
   const s=new T.Shape();s.moveTo(-w/2+r,-h/2);s.lineTo(w/2-r,-h/2);s.quadraticCurveTo(w/2,-h/2,w/2,-h/2+r);s.lineTo(w/2,h/2-r);s.quadraticCurveTo(w/2,h/2,w/2-r,h/2);s.lineTo(-w/2+r,h/2);s.quadraticCurveTo(-w/2,h/2,-w/2,h/2-r);s.lineTo(-w/2,-h/2+r);s.quadraticCurveTo(-w/2,-h/2,-w/2+r,-h/2);
   return new T.ExtrudeGeometry(s,{depth:d,bevelEnabled:true,bevelSegments:3,steps:1,bevelSize:0.012,bevelThickness:0.012,curveSegments:8});
@@ -23,11 +34,12 @@ function batchStatic(g:T.Group,except:T.Mesh[]=[]) {
   const groups=new Map<T.Material,T.BufferGeometry[]>();
   for(const child of [...g.children])if(child instanceof T.Mesh&&!(child instanceof T.InstancedMesh)&&!except.includes(child)&&!Array.isArray(child.material)) {
     child.updateMatrix();const geom=(child.geometry.index?child.geometry.toNonIndexed():child.geometry.clone()).applyMatrix4(child.matrix);
+    if(!geom.getAttribute('uv'))geom.setAttribute('uv',new T.BufferAttribute(new Float32Array(geom.getAttribute('position').count*2),2));
     const list=groups.get(child.material)||[];list.push(geom);groups.set(child.material,list);g.remove(child);if(child.geometry!==boxGeometry)child.geometry.dispose();
   }
   for(const [material,geos]of groups){const merged=mergeGeometries(geos,false);if(merged)g.add(new T.Mesh(merged,material));for(const geo of geos)geo.dispose();}
 }
-export function makeCar(n:NPC) {
+function buildCar(n:NPC) {
   const g=new T.Group(),spec=VEHICLES[n.vehicle],paint=mat(n.color,0.26,0.45),metal=mat(0x85918d,0.35,0.8);
   const base=centerHeight(n.vehicle),w=spec.width,l=spec.length,h=spec.height;
   const truck=['smallTruck','lorry','tractor'].includes(n.vehicle),van=['van','mpv'].includes(n.vehicle);
@@ -75,35 +87,46 @@ export function makeCar(n:NPC) {
   g.userData.signals=signals;batchStatic(g,signals);return g;
 }
 
-type Mirror={camera:T.PerspectiveCamera;target:T.WebGLRenderTarget;offset:T.Vector3;aim:T.Vector3;mesh:T.Mesh};
+const carTemplates=new Map<string,T.Group>();
+export function makeCar(n:NPC) {
+  const key=`${n.vehicle}:${n.kind}:${n.color}`;let template=carTemplates.get(key);
+  if(!template){template=buildCar(n);const signals=template.userData.signals as T.Mesh[];delete template.userData.signals;signals.forEach((s,i)=>s.name=`indicator-${i}`);template.traverse(o=>{if(o instanceof T.Mesh)sharedGeometry.add(o.geometry);});carTemplates.set(key,template);}
+  const g=template.clone(true);g.userData.signals=[g.getObjectByName('indicator-0'),g.getObjectByName('indicator-1')];return g;
+}
+
+type Mirror={camera:T.PerspectiveCamera;target:T.WebGLRenderTarget;offset:T.Vector3;aim:T.Vector3;mesh:T.Mesh;side:boolean};
+type CarPool={group:T.Group;parts:{mesh:T.InstancedMesh;local:T.Matrix4;paint:boolean;signal:number}[];npcs:NPC[]};
+export type Quality='auto'|'high'|'low';
 export class View {
   renderer:T.WebGLRenderer;scene=new T.Scene();camera=new T.PerspectiveCamera(70,1,0.06,2300);
   cockpit=new T.Group();shell=new T.Group();wheel=new T.Group();mirrors:Mirror[]=[];
-  roads=new Map<number,T.Group>();cars=new Map<number,T.Group>();decor=new T.Group();
+  roads=new Map<number,T.Group>();private carPools=new Map<string,CarPool>();decor=new T.Group();
   driverCanvas=document.createElement('canvas');navCanvas=document.createElement('canvas');
   driverTexture:T.CanvasTexture;navTexture:T.CanvasTexture;
-  private lastMirror=-1;private lastScreens=-1;private environmentCenter=new T.Vector3(1e6,0,0);
-  quality:'high'|'low'='high';fps=60;private avgTime=16.7;private lastRender=performance.now();
-  constructor(public canvas:HTMLCanvasElement,public sim:Simulation) {
+  private nextMirror=0;private mirrorDue=0;private mirrorsReady=false;private lastDriver=-1;private lastNavigation=-1;
+  private scenery=new Map<number,{group:T.Group;items:SceneryItem[]}>();private clearance:RoadClearance;private sceneryVersion=-1;
+  private visualCars:NPC[]=[];
+  quality:Quality='auto';fps=60;private avgTime=16.7;private lastRender=performance.now();private lastQualityCheck=0;private renderScale=1;private mirrorFPS=30;
+  constructor(public canvas:HTMLCanvasElement,public sim:DrivingState) {
     this.renderer=new T.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));this.renderer.outputColorSpace=T.SRGBColorSpace;
+    this.renderer.outputColorSpace=T.SRGBColorSpace;this.renderer.info.autoReset=false;
     this.renderer.toneMapping=T.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.16;
     this.scene.background=new T.Color(0xb7d4dc);this.scene.fog=new T.FogExp2(0xb6cbd0,0.00078);
     this.scene.add(new T.HemisphereLight(0xf9f1dd,0x667c76,2.7));
     const sun=new T.DirectionalLight(0xffe6bd,3.0);sun.position.set(-300,500,150);this.scene.add(sun);
     const sea=new T.Mesh(new T.PlaneGeometry(30000,30000),mat(0x699ba5,0.32,0.12));sea.rotation.x=-Math.PI/2;sea.position.y=-17;this.scene.add(sea);
     const land=new T.Mesh(new T.PlaneGeometry(30000,30000),mat(0xaaa68e,0.95));land.rotation.x=-Math.PI/2;land.position.set(15030,-2,0);this.scene.add(land);
-    const island=new T.Mesh(new T.ConeGeometry(720,190,9),mat(0x9eafa6));island.position.set(-1800,-6,-2900);this.scene.add(island);
     this.scene.add(this.decor);
     this.driverCanvas.width=960;this.driverCanvas.height=400;this.navCanvas.width=800;this.navCanvas.height=650;
     this.driverTexture=new T.CanvasTexture(this.driverCanvas);this.navTexture=new T.CanvasTexture(this.navCanvas);
     this.driverTexture.colorSpace=this.navTexture.colorSpace=T.SRGBColorSpace;
-    this.makeShell();this.makeCockpit();this.resize();this.syncWorld();
+    for(const texture of [this.driverTexture,this.navTexture]){texture.generateMipmaps=false;texture.minFilter=T.LinearFilter;}
+    this.visualCars=sim.npcs;this.clearance=new RoadClearance(sim.route);this.makeShell();this.makeCockpit();this.resize();this.syncWorld();
   }
-  setSimulation(sim:Simulation) {
-    this.sim=sim;for(const g of this.roads.values())this.disposeGroup(g);for(const g of this.cars.values())this.disposeGroup(g);this.roads.clear();this.cars.clear();this.environmentCenter.set(1e6,0,0);this.syncWorld();
+  setSimulation(sim:DrivingState) {
+    this.sim=sim;this.visualCars=sim.npcs;for(const g of this.roads.values())this.disposeGroup(g);for(const {group}of this.carPools.values())this.disposeGroup(group);for(const {group}of this.scenery.values())this.disposeGroup(group);this.roads.clear();this.carPools.clear();this.scenery.clear();this.clearance=new RoadClearance(sim.route);this.sceneryVersion=-1;this.lastDriver=this.lastNavigation=-1;this.mirrorsReady=false;this.syncWorld();
   }
-  private disposeGroup(g:T.Group) {this.scene.remove(g);g.traverse(o=>{if(o instanceof T.Mesh&&o.geometry!==boxGeometry)o.geometry.dispose();});}
+  private disposeGroup(g:T.Group) {g.removeFromParent();g.traverse(o=>{if(o instanceof T.InstancedMesh)o.dispose();if(o instanceof T.Mesh){if(!sharedGeometry.has(o.geometry))o.geometry.dispose();const list=Array.isArray(o.material)?o.material:[o.material];for(const m of list)if(m.userData.disposeWhenRemoved){(m as T.MeshBasicMaterial).map?.dispose();m.dispose();}}});}
   private screen(texture:T.Texture,w:number,h:number,pos:number[],tilt=0) {
     const mount=new T.Group();mount.position.set(...pos as [number,number,number]);mount.rotation.x=tilt;this.cockpit.add(mount);
     const casing=new T.Mesh(rounded(w+0.022,h+0.022,0.018,0.028),DARK);casing.position.z=-0.03;mount.add(casing);
@@ -111,7 +134,8 @@ export class View {
     box(mount,[w*0.75,0.08,0.14],[0,-h/2-0.035,-0.12],DARK);return m;
   }
   private makeShell() {
-    this.shell.add(makeRoadsterBody());
+    const body=makeRoadsterBody();batchStatic(body,body.children.filter(o=>o instanceof T.Mesh&&!Array.isArray(o.material)&&o.material.transparent) as T.Mesh[]);this.shell.add(body);
+    for(const side of [-1,1]){mirrorSupport(this.shell,side);pill(this.shell,.385,.235,.05,[side*MIRROR_SIDE.x,MIRROR_HEIGHT.side,MIRROR_SIDE.z-.075],mat(0x192321,.3,.3));}
     // The seat camera uses the fitted cockpit; mirror cameras also see the exterior.
     this.shell.traverse(o=>o.layers.set(1));this.scene.add(this.shell);
   }
@@ -126,12 +150,12 @@ export class View {
     const console=pill(this.cockpit,0.31,0.5,0.95,[0.36,-0.11,-0.65],DARK);console.rotation.x=-0.14;
     for(const x of [-1.1,1.1]) {
       const door=box(this.cockpit,[0.12,0.65,2.25],[Math.sign(x)*0.94,0.16,-0.11],DARK);door.rotation.z=x>0?-0.04:0.04;
-      const side=Math.sign(x),bottom=new T.Vector3(side*1.03,0.27,-1.20),top=new T.Vector3(side*0.93,1.20,-0.70);
+      const side=Math.sign(x),bottom=new T.Vector3(side*1.03,0.27,-1.20),top=new T.Vector3(side*0.93,WINDSHIELD_TOP,-0.70);
       const pillar=box(this.cockpit,[0.055,bottom.distanceTo(top),0.065],bottom.clone().lerp(top,0.5).toArray(),mat(0x282e2b));pillar.quaternion.setFromUnitVectors(UP,top.sub(bottom).normalize());
       box(this.cockpit,[0.10,0.08,0.45],[Math.sign(x)*0.89,0.36,-0.1],mat(0x65716c,0.4,0.6));
     }
-    box(this.cockpit,[1.90,0.035,0.075],[0,1.20,-0.70],DARK);
-    box(this.cockpit,[0.035,0.065,0.035],[-0.02,1.175,-0.83],DARK);
+    box(this.cockpit,[1.90,0.035,0.075],[0,WINDSHIELD_TOP,-0.70],DARK);
+    box(this.cockpit,[0.035,0.10,0.035],[-0.02,1.30,-0.83],DARK);
     this.screen(this.driverTexture,0.67,0.30,[-0.39,0.59,-0.68],-0.10);
     this.screen(this.navTexture,0.60,0.50,[0.34,0.48,-0.67],-0.09);
     this.wheel.position.set(-0.39,0.22,-0.56);this.wheel.scale.setScalar(0.68);this.wheel.rotation.x=-0.22;this.cockpit.add(this.wheel);
@@ -142,26 +166,30 @@ export class View {
     box(this.wheel,[0.040,0.022,0.064],[0,-0.20,0.003],new T.MeshBasicMaterial({color:0xff8050}));
     pill(this.wheel,0.18,0.125,0.03,[0,0,-0.006],mat(0x333c38));
     box(this.wheel,[0.035,0.11,0.014],[0,-0.015,0.036],mat(0xd1d9d0,0.4,0.7));box(this.wheel,[0.092,0.016,0.014],[0,0.04,0.036],mat(0xd1d9d0,0.4,0.7));
-    for(const side of [-1,1])box(this.cockpit,[0.23,0.055,0.12],[side*1.12,0.97,-0.98],DARK);
-    this.makeMirror([-1.24,1.00,-0.84],0.34,0.19,[-1.24,0.60,-0.84],[-0.10,-0.065,1],true);
-    this.makeMirror([1.24,1.00,-0.84],0.34,0.19,[1.24,0.60,-0.84],[0.10,-0.065,1],true);
-    this.makeMirror([-0.02,1.08,-0.76],0.42,0.12,[-0.02,0.68,-0.76],[0,-0.06,1],false);
+    for(const side of [-1,1]){
+      mirrorSupport(this.cockpit,side,.4);
+      this.makeMirror([side*MIRROR_SIDE.x,MIRROR_HEIGHT.side+.4,MIRROR_SIDE.z],.34,.19,[side*MIRROR_SIDE.x,MIRROR_HEIGHT.side,MIRROR_SIDE.z],[side*MIRROR_SIDE.outward,-.065,1],true);
+    }
+    this.makeMirror([-0.02,MIRROR_HEIGHT.rear+.4,-0.76],0.42,0.12,[-0.02,MIRROR_HEIGHT.rear,-0.76],[0,-0.06,1],false);
+    batchStatic(this.wheel);batchStatic(this.cockpit,this.mirrors.map(m=>m.mesh));
+    this.cockpit.traverse(o=>o.layers.set(2));this.camera.layers.enable(2);
   }
   private makeMirror(pos:number[],w:number,h:number,offset:number[],aim:number[],side:boolean) {
     const target=new T.WebGLRenderTarget(side?512:640,side?288:180);target.texture.colorSpace=T.SRGBColorSpace;
     const horizontalFov=MIRROR_HORIZONTAL_FOV[side?'side':'rear'];
     const verticalFov=T.MathUtils.radToDeg(2*Math.atan(Math.tan(T.MathUtils.degToRad(horizontalFov/2))/(w/h)));
-    const camera=new T.PerspectiveCamera(verticalFov,w/h,0.15,1000);
+    const camera=new T.PerspectiveCamera(verticalFov,w/h,0.15,650);
     camera.layers.enable(1);
     pill(this.cockpit,w+0.045,h+0.045,0.05,[pos[0],pos[1],pos[2]-0.075],mat(0x192321,0.3,0.3));
     const mirrorMat=new T.MeshBasicMaterial({map:target.texture,toneMapped:false});target.texture.wrapS=T.RepeatWrapping;target.texture.repeat.x=-1;target.texture.offset.x=1;
     const mesh=new T.Mesh(roundedFace(w,h,0.024),mirrorMat);mesh.position.set(...pos as [number,number,number]);this.cockpit.add(mesh);
-    this.mirrors.push({camera,target,offset:new T.Vector3(...offset as [number,number,number]),aim:new T.Vector3(...aim as [number,number,number]),mesh});
+    this.mirrors.push({camera,target,offset:new T.Vector3(...offset as [number,number,number]),aim:new T.Vector3(...aim as [number,number,number]),mesh,side});
   }
   private makeRoad(p:Patch) {
     const g=new T.Group();const geo=new T.BufferGeometry();geo.setAttribute('position',new T.BufferAttribute(p.vertices,3));geo.setIndex(new T.BufferAttribute(p.indices,1));geo.computeVertexNormals();
     const uv=new Float32Array(p.vertices.length/3*2);for(let i=0;i<uv.length/4;i++){uv[i*4]=0;uv[i*4+1]=i/3;uv[i*4+2]=1;uv[i*4+3]=i/3;}geo.setAttribute('uv',new T.BufferAttribute(uv,2));
     const road=new T.Mesh(geo,ROAD);g.add(road);
+    g.add(new T.Mesh(roadDeckGeometry(p.vertices,p.indices),CONCRETE));
     const seg=p.seg,step=8;
     const rails:number[]=[],matrices:T.Matrix4[]=[];const railMatrices:T.Matrix4[]=[];
     for(let t=seg.id===0?-300:0;t<seg.length;t+=step) {
@@ -183,7 +211,7 @@ export class View {
     if(seg.kind!=='road') {
       const signAt=seg.kind==='loop'?0:seg.kind==='jump'?75:25;const f=this.sim.route.sampleSegment(seg,signAt);
       const c=document.createElement('canvas');c.width=512;c.height=160;const ctx=c.getContext('2d')!;ctx.fillStyle='#24493f';ctx.fillRect(0,0,512,160);ctx.strokeStyle='#e4eee1';ctx.lineWidth=5;ctx.strokeRect(9,9,494,142);ctx.fillStyle='#fff';ctx.font='bold 45px sans-serif';ctx.textAlign='center';ctx.fillText(seg.kind==='loop'?'半圆环 / LOOP':seg.kind==='jump'?'飞跃 / CROSSING':'道路分岔 / FORK',256,67);ctx.font='32px sans-serif';ctx.fillText(`${seg.side<0?'↖ 左侧':'右侧 ↗'}  ${seg.kind==='loop'?'160—185 km/h':''}`,256,119);
-      const sign=new T.Mesh(new T.PlaneGeometry(5.12,1.6),new T.MeshBasicMaterial({map:new T.CanvasTexture(c)}));sign.position.copy(f.p).addScaledVector(f.up,5);sign.quaternion.copy(f.q);g.add(sign);
+      const signMaterial=new T.MeshBasicMaterial({map:new T.CanvasTexture(c)});signMaterial.userData.disposeWhenRemoved=true;const sign=new T.Mesh(new T.PlaneGeometry(5.12,1.6),signMaterial);sign.position.copy(f.p).addScaledVector(f.up,5);sign.quaternion.copy(f.q);g.add(sign);
       for(const x of [-4,4]){const post=box(g,[0.12,5,0.12],f.p.clone().addScaledVector(f.right,x).addScaledVector(f.up,2.5).toArray(),RAIL);post.quaternion.copy(f.q);}
     }
     batchStatic(g);this.roads.set(p.id,g);this.scene.add(g);
@@ -191,23 +219,57 @@ export class View {
   syncWorld() {
     for(const patch of this.sim.patches)if(!this.roads.has(patch.id))this.makeRoad(patch);
     const ids=new Set(this.sim.patches.map(p=>p.id));for(const [id,g]of this.roads)if(!ids.has(id)){this.disposeGroup(g);this.roads.delete(id);}
-    const nids=new Set(this.sim.npcs.map(n=>n.id));for(const [id,g]of this.cars)if(!nids.has(id)){this.disposeGroup(g);this.cars.delete(id);}
-    for(const n of this.sim.npcs) {
-      let g=this.cars.get(n.id);if(!g){g=makeCar(n);this.cars.set(n.id,g);this.scene.add(g);}
-      g.position.copy(n.pos);g.quaternion.copy(n.q);
-      const signals=g.userData.signals as T.Mesh[];signals.forEach((s,i)=>s.visible=!!n.signal&&Math.floor(this.sim.elapsed*2)%2===0&&(i===0?n.targetLane<n.lane:n.targetLane>n.lane));
+    for(const pool of this.carPools.values())pool.npcs=[];
+    for(const n of this.visualCars) {
+      const key=`${n.vehicle}:${n.kind}`;let pool=this.carPools.get(key);
+      if(!pool) {
+        const template=makeCar({...n,color:0xffffff}),group=new T.Group(),parts:CarPool['parts']=[];
+        for(const child of template.children)if(child instanceof T.Mesh&&!Array.isArray(child.material)) {
+          child.updateMatrix();const mesh=new T.InstancedMesh(child.geometry,child.material,64);mesh.frustumCulled=false;mesh.instanceMatrix.setUsage(T.DynamicDrawUsage);group.add(mesh);
+          parts.push({mesh,local:child.matrix.clone(),paint:child.material===mat(0xffffff,.26,.45),signal:child.name.startsWith('indicator-')?Number(child.name.at(-1)):-1});
+        }
+        pool={group,parts,npcs:[]};this.carPools.set(key,pool);this.scene.add(group);
+      }
+      pool.npcs.push(n);
     }
-    if(this.sim.position.distanceTo(this.environmentCenter)>600)this.makeEnvironment();
+    for(const [key,pool]of this.carPools) {
+      if(!pool.npcs.length){this.disposeGroup(pool.group);this.carPools.delete(key);continue;}
+      for(const part of pool.parts)if(pool.npcs.length>part.mesh.instanceMatrix.count) {
+        const old=part.mesh,mesh=new T.InstancedMesh(old.geometry,old.material,2**Math.ceil(Math.log2(pool.npcs.length)));mesh.frustumCulled=false;mesh.instanceMatrix.setUsage(T.DynamicDrawUsage);pool.group.add(mesh);old.removeFromParent();old.dispose();part.mesh=mesh;
+      }
+    }
+    this.syncEnvironment();
   }
-  private makeEnvironment() {
-    this.environmentCenter.copy(this.sim.position);this.decor.clear();
-    const rockMat=mat(0xb0ab95,0.98),treeMat=mat(0x385649,0.98),bark=mat(0x6c6d58);
-    for(let i=0;i<90;i++) {
-      const s=Math.max(0,this.sim.s-400+i*25);const f=this.sim.route.sample(s);if(!f.exists)continue;
-      const side=i%3===0?-1:1;const offset=side*(72+(Math.sin(i*63.5)+1)*46);const p=f.p.clone().addScaledVector(f.right,offset);p.y=-1.4;
-      if(side>0||i%4===0) {const m=new T.Mesh(new T.IcosahedronGeometry(1,0),rockMat);m.position.copy(p);m.scale.set(15+i%8*4,8+i%7*8,22+i%4*7);m.position.y-=3;m.rotation.set(i,0.3*i,i*0.1);this.decor.add(m);}
-      if(side>0) {const tree=new T.Group();box(tree,[0.45,6,0.45],[0,2,0],bark);const crown=new T.Mesh(new T.ConeGeometry(3.2,11,7),treeMat);crown.position.y=7.3;tree.add(crown);tree.position.copy(p).addScaledVector(f.right,-5);this.decor.add(tree);}
+  private prepareCars(camera:T.PerspectiveCamera) {
+    camera.updateMatrixWorld();const frustum=new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse));
+    const sphere=new T.Sphere(),world=new T.Matrix4(),matrix=new T.Matrix4(),scale=new T.Vector3(1,1,1),color=new T.Color();
+    for(const pool of this.carPools.values()) {
+      const visible=pool.npcs.filter(n=>{const spec=VEHICLES[n.vehicle];sphere.center.copy(n.pos);sphere.radius=Math.hypot(spec.length,spec.width,spec.height)/2;return frustum.intersectsSphere(sphere);});
+      for(const part of pool.parts) {
+        const {mesh}=part;mesh.count=visible.length;let lit=part.signal<0;
+        visible.forEach((n,i)=>{world.compose(n.pos,n.q,scale);matrix.multiplyMatrices(world,part.local);
+          if(part.signal>=0){const blink=!!n.signal&&Math.floor(this.sim.elapsed*2)%2===0&&(part.signal===0?n.targetLane<n.lane:n.targetLane>n.lane);if(!blink)matrix.scale(new T.Vector3(0,0,0));else lit=true;}
+          mesh.setMatrixAt(i,matrix);if(part.paint)mesh.setColorAt(i,color.set(n.color));
+        });
+        mesh.visible=visible.length>0&&lit;mesh.instanceMatrix.needsUpdate=true;if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
+      }
     }
+  }
+  private syncEnvironment() {
+    const route=this.sim.route,changed=this.sceneryVersion!==route.segments.length;
+    if(changed){this.clearance=new RoadClearance(route);this.sceneryVersion=route.segments.length;}
+    for(const [id,chunk]of this.scenery) {
+      const seg=route.segments[id];if(seg.start+seg.length<this.sim.s-700||seg.start>this.sim.s+1800){this.disposeGroup(chunk.group);this.scenery.delete(id);continue;}
+      if(changed){const items=chunk.items.filter(item=>this.clearance.isClear(item.position,item.radius));if(items.length!==chunk.items.length){this.disposeGroup(chunk.group);this.scenery.set(id,{group:this.makeEnvironmentChunk(items),items});}}
+    }
+    for(let id=route.segmentAt(Math.max(0,this.sim.s-700)).id;id<route.segments.length&&route.segments[id].start<=this.sim.s+1800;id++)if(!this.scenery.has(id)) {
+      const items=sceneryForSegment(route,route.segments[id],this.clearance);this.scenery.set(id,{group:this.makeEnvironmentChunk(items),items});
+    }
+  }
+  private makeEnvironmentChunk(items:SceneryItem[]) {
+    const group=new T.Group(),rocks=items.filter(i=>i.kind==='rock'),trees=items.filter(i=>i.kind==='tree');this.decor.add(group);
+    const instances=(geometry:T.BufferGeometry,material:T.Material,list:SceneryItem[],size:T.Vector3,y=0)=>{if(!list.length)return;const mesh=new T.InstancedMesh(geometry,material,list.length),matrix=new T.Matrix4();list.forEach((item,i)=>{matrix.compose(item.position.clone().addScaledVector(UP,y),item.rotation,item.scale.clone().multiply(size));mesh.setMatrixAt(i,matrix);});mesh.computeBoundingSphere();group.add(mesh);};
+    instances(rockGeometry,ROCK,rocks,new T.Vector3(1,1,1));instances(boxGeometry,BARK,trees,new T.Vector3(.45,6,.45),2);instances(treeGeometry,LEAVES,trees,new T.Vector3(3.2,11,3.2),7.3);return group;
   }
   private drawDriver() {
     const s=this.sim,c=this.driverCanvas.getContext('2d')!;c.fillStyle='#101b1c';c.fillRect(0,0,960,400);
@@ -230,8 +292,8 @@ export class View {
     c.strokeStyle='#d5d7ca';c.lineWidth=1;for(let i=-800;i<1400;i+=65){c.beginPath();c.moveTo(i,170);c.lineTo(i-200,520);c.stroke();c.beginPath();c.moveTo(0,i);c.lineTo(800,i+110);c.stroke();}
     const heading=new T.Vector3(0,0,-1).applyQuaternion(s.rotation).setY(0).normalize();if(heading.lengthSq()<0.01)heading.copy(s.currentFrame.forward).setY(0).normalize();const right=heading.clone().cross(UP);
     const project=(p:T.Vector3)=>{const d=p.clone().sub(s.position);return [400+d.dot(right)*0.72,465-d.dot(heading)*0.30];};
-    const line=(offset:number,color:string,width:number)=>{c.beginPath();for(let i=-120;i<=1400;i+=12){const f=s.route.sample(Math.max(0,s.s+i));const p=f.p.clone().addScaledVector(f.right,offset);const [x,y]=project(p);if(i===-120)c.moveTo(x,y);else c.lineTo(x,y);}c.strokeStyle=color;c.lineWidth=width;c.lineCap='round';c.stroke();};
-    c.save();c.beginPath();c.rect(0,169,800,355);c.clip();line(0,'#c6cabe',34);line(0,'#faf8ed',23);line(0,'#f47643',8);
+    const path=new Path2D();for(let i=-120;i<=1400;i+=12){const [x,y]=project(s.route.sample(Math.max(0,s.s+i)).p);if(i===-120)path.moveTo(x,y);else path.lineTo(x,y);}
+    c.save();c.beginPath();c.rect(0,169,800,355);c.clip();c.lineCap='round';for(const [color,width]of [['#c6cabe',34],['#faf8ed',23],['#f47643',8]] as const){c.strokeStyle=color;c.lineWidth=width;c.stroke(path);}
     for(const ev of events){const [x,y]=project(s.route.sample(ev.at).p);c.fillStyle='#254c40';c.beginPath();c.arc(x,y,15,0,Math.PI*2);c.fill();c.fillStyle='#fff';c.textAlign='center';c.font='bold 17px sans-serif';c.fillText(ev.kind==='loop'?'↻':ev.kind==='fork'?'Y':ev.kind==='jump'?'↑':'~',x,y+6);}
     c.translate(400,465);c.beginPath();c.moveTo(0,-19);c.lineTo(13,14);c.lineTo(0,8);c.lineTo(-13,14);c.closePath();c.fillStyle='#223f35';c.fill();c.restore();
     c.fillStyle='#183d31';c.fillRect(0,0,800,170);c.fillStyle='#f7f4e7';c.font='bold 42px sans-serif';c.textAlign='left';
@@ -243,25 +305,39 @@ export class View {
     c.fillStyle='#6d796b';c.font='20px sans-serif';c.fillText(events[1]?`${Math.round(events[1].at-s.s)} m 后 ${eventText(events[1])}`:'前方路况良好',28,630);
     this.navTexture.needsUpdate=true;
   }
-  resize(){const w=this.canvas.clientWidth||innerWidth,h=this.canvas.clientHeight||innerHeight;this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.camera.fov=T.MathUtils.radToDeg(2*Math.atan(Math.tan(T.MathUtils.degToRad(56))/this.camera.aspect));this.camera.updateProjectionMatrix();}
-  render(now=performance.now()) {
-    const delta=now-this.lastRender;this.avgTime=this.avgTime*0.95+delta*0.05;this.fps=Math.round(1000/Math.max(1,this.avgTime));this.lastRender=now;
-    this.syncWorld();const s=this.sim;
-    this.cockpit.position.copy(s.position).add(new T.Vector3(0,-0.4,0).applyQuaternion(s.rotation));this.cockpit.quaternion.copy(s.rotation);
-    this.shell.position.copy(s.position);this.shell.quaternion.copy(s.rotation);
-    const shake=s.grounded?Math.sin(s.elapsed*30)*Math.min(0.008,s.speed*0.00008):0;
-    this.camera.position.copy(new T.Vector3(-0.39,0.63+shake,0.42).applyQuaternion(s.rotation).add(s.position));this.camera.quaternion.copy(s.rotation).multiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(1,0,0),-0.12));
-    this.wheel.rotation.z=-s.steering*16;
-    if(now-this.lastScreens>50){this.drawDriver();this.drawNavigation();this.lastScreens=now;}
-    if(now-this.lastMirror>(this.quality==='high'?33:66)) {
-      for(const m of this.mirrors)m.mesh.visible=false;
-      for(const m of this.mirrors) {
-        m.camera.position.copy(m.offset).applyQuaternion(s.rotation).add(s.position);
-        m.camera.up.copy(UP).applyQuaternion(s.rotation);m.camera.lookAt(m.camera.position.clone().add(m.aim.clone().applyQuaternion(s.rotation)));
-        this.renderer.setRenderTarget(m.target);this.renderer.render(this.scene,m.camera);
-      }
-      for(const m of this.mirrors)m.mesh.visible=true;this.lastMirror=now;
+  setQuality(quality:Quality) {
+    this.quality=quality;this.renderScale=1;this.mirrorFPS=quality==='low'?15:30;this.configureMirrors();this.resize();
+  }
+  private configureMirrors() {
+    const scale=this.quality==='low'||this.quality==='auto'&&this.renderScale<.8?.5:1;
+    for(const m of this.mirrors)m.target.setSize((m.side?512:640)*scale,(m.side?288:180)*scale);this.mirrorsReady=false;
+  }
+  resize(){const w=this.canvas.clientWidth||innerWidth,h=this.canvas.clientHeight||innerHeight;this.renderer.setPixelRatio(Math.min(devicePixelRatio,this.quality==='high'?1.5:this.quality==='low'?1:1.25)*this.renderScale);this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.camera.fov=T.MathUtils.radToDeg(2*Math.atan(Math.tan(T.MathUtils.degToRad(56))/this.camera.aspect));this.camera.updateProjectionMatrix();}
+  render(now=performance.now(),active=true) {
+    const delta=now-this.lastRender;if(active&&delta<200){this.avgTime=this.avgTime*.95+delta*.05;this.fps=Math.round(1000/Math.max(1,this.avgTime));}this.lastRender=now;
+    if(active&&this.quality==='auto'&&now-this.lastQualityCheck>2500) {
+      const previous=this.renderScale;if(this.avgTime>23)this.renderScale=Math.max(.65,this.renderScale-.15);else if(this.avgTime<17.5)this.renderScale=Math.min(1,this.renderScale+.05);
+      if(previous!==this.renderScale){this.mirrorFPS=this.renderScale<.8?15:30;this.configureMirrors();this.resize();}this.lastQualityCheck=now;
     }
-    this.renderer.setRenderTarget(null);this.renderer.render(this.scene,this.camera);
+    this.renderer.info.reset();
+    const s=this.sim,pose=s.sampleVisualState?.(now,active)||s;this.visualCars=pose.npcs;this.syncWorld();
+    this.cockpit.position.copy(pose.position).add(new T.Vector3(0,-0.4,0).applyQuaternion(pose.rotation));this.cockpit.quaternion.copy(pose.rotation);
+    this.shell.position.copy(pose.position);this.shell.quaternion.copy(pose.rotation);
+    const shake=s.grounded?Math.sin(s.elapsed*30)*Math.min(0.008,s.speed*0.00008):0;
+    this.camera.position.copy(new T.Vector3(-0.39,0.63+shake,0.42).applyQuaternion(pose.rotation).add(pose.position));this.camera.quaternion.copy(pose.rotation).multiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(1,0,0),-0.12));
+    this.wheel.rotation.z=-s.steering*16;
+    if(now-this.lastDriver>66){this.drawDriver();this.lastDriver=now;}
+    if(now-this.lastNavigation>125){this.drawNavigation();this.lastNavigation=now;}
+    const period=1000/(this.mirrors.length*this.mirrorFPS);if(now-this.mirrorDue>150)this.mirrorDue=now;
+    const updates=this.mirrorsReady?Math.min(2,Math.floor((now-this.mirrorDue)/period)):this.mirrors.length;
+    for(let i=0;i<updates;i++) {
+        const m=this.mirrors[this.nextMirror];this.nextMirror=(this.nextMirror+1)%this.mirrors.length;
+        m.camera.position.copy(m.offset).applyQuaternion(pose.rotation).add(pose.position);
+        m.camera.up.copy(UP).applyQuaternion(pose.rotation);m.camera.lookAt(m.camera.position.clone().add(m.aim.clone().applyQuaternion(pose.rotation)));
+        this.prepareCars(m.camera);this.renderer.setRenderTarget(m.target);this.renderer.render(this.scene,m.camera);
+        this.mirrorDue+=period;
+    }
+    if(!this.mirrorsReady){this.mirrorDue=now;this.mirrorsReady=true;}
+    this.prepareCars(this.camera);this.renderer.setRenderTarget(null);this.renderer.render(this.scene,this.camera);
   }
 }

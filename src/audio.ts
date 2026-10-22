@@ -1,4 +1,4 @@
-import type { Simulation } from './simulation';
+import type { DrivingState } from './drivingState';
 import { eventText } from './core';
 
 export class AudioSystem {
@@ -13,7 +13,7 @@ export class AudioSystem {
   }
   reset(){this.spoken.clear();if('speechSynthesis'in window)speechSynthesis.cancel();}
   silence(){if(this.ctx){this.engineGain!.gain.setTargetAtTime(0,this.ctx.currentTime,0.05);this.jetGain!.gain.setTargetAtTime(0,this.ctx.currentTime,0.05);}if('speechSynthesis'in window)speechSynthesis.cancel();}
-  update(s:Simulation) {
+  update(s:DrivingState) {
     if(this.ctx) {
       this.engine!.frequency.setTargetAtTime(45+s.speed*2.7+Math.abs(s.rawInput.gas)*45,this.ctx.currentTime,0.15);
       this.engineGain!.gain.setTargetAtTime(this.effects?0.025+s.speed*0.00022:0,this.ctx.currentTime,0.15);

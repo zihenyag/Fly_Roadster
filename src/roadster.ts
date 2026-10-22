@@ -1,9 +1,12 @@
 import * as T from 'three';
+import {WINDSHIELD_TOP} from './core';
 
 /** Complete exterior and rear cabin, in the same body coordinates as the cockpit. */
 export function makeRoadsterBody() {
   const car=new T.Group();car.name='Roadster exterior';
   const base=0.8;
+  const roofRaise=WINDSHIELD_TOP-.4-(1.55-base);
+  const height=(y:number)=>y+(y>=1.4?roofRaise:0);
   const paint=new T.MeshPhysicalMaterial({color:0xece9df,roughness:0.29,metalness:0.20,clearcoat:1,clearcoatRoughness:0.18,side:T.DoubleSide});
   const trim=new T.MeshStandardMaterial({color:0x202a2c,roughness:0.48});
   const leather=new T.MeshStandardMaterial({color:0x263234,roughness:0.92});
@@ -16,7 +19,7 @@ export function makeRoadsterBody() {
     const m=new T.Mesh(new T.BoxGeometry(...size as [number,number,number]),material);m.position.set(position[0],position[1]-base,position[2]);m.name=name;car.add(m);return m;
   };
   const skin=(points:number[][],indices:number[],material:T.Material,name:string)=>{
-    const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(points.flatMap(p=>[p[0],p[1]-base,p[2]]),3));g.setIndex(indices);g.computeVertexNormals();
+    const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(points.flatMap(p=>[p[0],height(p[1])-base,p[2]]),3));g.setIndex(indices);g.computeVertexNormals();
     const m=new T.Mesh(g,material);m.name=name;car.add(m);return m;
   };
   const panel=(points:number[][],material:T.Material,name:string)=>skin(points,[0,1,2,0,2,3],material,name);
@@ -25,7 +28,7 @@ export function makeRoadsterBody() {
     const inside=new T.Mesh(m.geometry,insideGlass);inside.name=name+' interior';car.add(inside);
   };
   const line=(points:number[][],material:T.Material,r=0.005)=>{
-    const curve=new T.CatmullRomCurve3(points.map(p=>new T.Vector3(p[0],p[1]-base,p[2])));
+    const curve=new T.CatmullRomCurve3(points.map(p=>new T.Vector3(p[0],height(p[1])-base,p[2])));
     const m=new T.Mesh(new T.TubeGeometry(curve,32,r,6,false),material);car.add(m);return m;
   };
   const profile=new T.CatmullRomCurve3([

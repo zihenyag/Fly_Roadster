@@ -1,6 +1,6 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Vector3, Quaternion } from 'three';
-import { Route, Random, STEP, MAX_SPEED, V800_MAX_SPEED_DELTA, SU7_LOSS_AT, MIRROR_HORIZONTAL_FOV, UP, IDLE, LANE_WIDTH, ROAD_HALF, RAIL_X, clamp, smooth, fuelStep, fuelRate, type Controls, type RoadSegment, type RoadFrame, type HazardSpec } from './core';
+import { Route, Random, STEP, MAX_SPEED, V800_MAX_SPEED_DELTA, SU7_LOSS_AT, MIRROR_HORIZONTAL_FOV, MIRROR_HEIGHT, MIRROR_SIDE, UP, IDLE, LANE_WIDTH, ROAD_HALF, RAIL_X, clamp, smooth, fuelStep, fuelRate, type Controls, type RoadSegment, type RoadFrame, type HazardSpec } from './core';
 import { VEHICLES,centerHeight,type VehicleType } from './vehicles';
 
 let initialization:Promise<void>|undefined;
@@ -21,6 +21,7 @@ export class Simulation {
   private starved=false;
   private validating=false;
   private hazardAttemptAt=0;
+  private hazardTrial=0;
   certifiedHazards=0; rejectedHazards=0;
   incidents=0;private nextIncident=1750;private playerHandles:number[]=[];
   private floorHandle:number;private floorContactTime=0;
@@ -33,12 +34,16 @@ export class Simulation {
     this.body=this.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0,0.89,0).setCanSleep(false).setCcdEnabled(true).setLinearDamping(0.01).setAngularDamping(3));
     this.collider=this.world.createCollider(RAPIER.ColliderDesc.roundCuboid(0.94,0.22,2.27,0.05).setMass(1450).setFriction(0.3).setRestitution(0),this.body);
     this.playerHandles.push(this.collider.handle);
-    for(const side of [-1,1]) {const m=this.world.createCollider(RAPIER.ColliderDesc.cuboid(0.205,0.132,0.046).setTranslation(side*1.24,0.60,-0.882).setMass(1),this.body);this.playerHandles.push(m.handle);this.metadata.set(m.handle,'车身');}
+    for(const side of [-1,1]) {const m=this.world.createCollider(RAPIER.ColliderDesc.cuboid(0.205,0.132,0.046).setTranslation(side*MIRROR_SIDE.x,MIRROR_HEIGHT.side,MIRROR_SIDE.z-.042).setMass(1),this.body);this.playerHandles.push(m.handle);this.metadata.set(m.handle,'车身');}
     const floor=this.world.createCollider(RAPIER.ColliderDesc.roundCuboid(0.78,0.025,1.64,0.025).setTranslation(0,-0.4,0).setMass(0).setFriction(0).setRestitution(0),this.body);this.floorHandle=floor.handle;this.playerHandles.push(floor.handle);this.metadata.set(floor.handle,'车身');
     this.body.setLinvel(this.velocity,true);this.metadata.set(this.collider.handle,'车身');this.ensureWorld();
     if(traffic) for(let i=0;i<18;i++)this.spawnNormal(120+i*72);
   }
   fail(reason:string,detail:string) {this.failure??={reason,detail};}
+  warmValidation() {
+    // Compile and warm the snapshot/physics path before driving, rather than at the first hazard.
+    if(this.traffic){this.replayEscape(0,8);this.witnessReports=[];}
+  }
   ensureWorld() {
     this.route.extend(this.s+4500);
     for(const seg of this.route.segments) {
@@ -99,18 +104,22 @@ export class Simulation {
     const speed=h.kind==='v800'?this.speed+this.rng.range(14/3.6,V800_MAX_SPEED_DELTA):clamp(this.speed,35/3.6,260/3.6);
     const baseGap=h.kind==='v800'?Math.max(52,(speed-this.speed)*(h.reaction+2.5)+6):clamp(45+this.speed*0.6,60,90);
     const spawnLane=h.kind==='v800'?lane:free.includes(lane+h.side)?lane+h.side:free[0];
-    for(const extra of [0,12,24]) {
+    const trial=this.hazardTrial++;
+    for(const extra of [[0,12,24][Math.floor(trial/2)%3]]) {
       const gap=baseGap+extra;if(h.kind==='v800'&&gap>78)continue;
       const at=this.s+(h.kind==='v800'?-gap:gap),spec=VEHICLES[h.kind==='v800'?'mpv':'sports'];
       if(this.route.segmentAt(at).kind!=='road'||this.npcs.some(n=>Math.abs(n.s-at)<(spec.length+VEHICLES[n.vehicle].length)/2+12&&Math.abs(n.lane-spawnLane)<0.7))continue;
       const created=this.addNPC(h.kind,at,spawnLane,speed,h.side,h.kind==='su7'?SU7_LOSS_AT:h.reaction);if(h.kind==='su7')created.targetLane=lane;
-      if(this.hazardVisible(created)&&free.some(target=>this.replayEscape(target,h.reaction+6,3.2))) {this.certifiedHazards++;return true;}
+      // Admit only after the same full physical replay. Spread rejected alternatives across
+      // separate attempts so several 10-second replays cannot block one visible frame.
+      const target=free[trial%free.length];
+      if(this.hazardVisible(created)&&this.replayEscape(target,h.reaction+6,3.2)) {this.certifiedHazards++;return true;}
       this.rejectedHazards++;this.metadata.delete(created.collider.handle);this.world.removeRigidBody(created.body);this.npcs.splice(this.npcs.indexOf(created),1);
     }
     return false;
   }
   private hazardVisible(n:NPC) {
-    const rear=n.kind==='v800',eye=new Vector3(...(rear?[-0.02,0.68,-0.76]:[-0.39,0.63,0.42]) as [number,number,number]).applyQuaternion(this.rotation).add(this.position);
+    const rear=n.kind==='v800',eye=new Vector3(...(rear?[-0.02,MIRROR_HEIGHT.rear,-0.76]:[-0.39,0.63,0.42]) as [number,number,number]).applyQuaternion(this.rotation).add(this.position);
     const delta=n.pos.clone().sub(eye),heading=new Vector3(0,0,rear?1:-1).applyQuaternion(this.rotation),right=new Vector3(1,0,0).applyQuaternion(this.rotation);
     const distance=delta.length(),along=delta.dot(heading),fov=rear?MIRROR_HORIZONTAL_FOV.rear:112;
     if(along<=0||Math.abs(Math.atan2(delta.dot(right),along))>fov*Math.PI/360-0.035)return false;

@@ -1,7 +1,7 @@
 import './style.css';
-import { FUNCTION_KEYS, controlsFromKeys, STEP } from './core';
-import { initPhysics, Simulation } from './simulation';
-import { View } from './render';
+import { FUNCTION_KEYS, controlsFromKeys } from './core';
+import { SimulationClient, type GameState } from './drivingState';
+import { View, type Quality } from './render';
 import { AudioSystem } from './audio';
 
 const app=document.querySelector<HTMLDivElement>('#app')!;
@@ -18,11 +18,13 @@ app.innerHTML=`
 `;
 
 const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id)! as T;
+$<HTMLSelectElement>('quality').insertAdjacentHTML('afterbegin','<option value="auto" selected>自动 · 自适应画质</option>');
 const keys=new Set<string>();const blockedUntilRelease=new Set<string>();
-let state:'loading'|'ready'|'running'|'paused'|'failed'='loading';let sim:Simulation,view:View;
-const audio=new AudioSystem();let accumulator=0,lastTime=performance.now();let lastUI=0;
+let state:'loading'|'ready'|'running'|'paused'|'failed'='loading';let sim:GameState,view:View,client:SimulationClient;
+const audio=new AudioSystem();let lastUI=0;let needsRender=true;
 const seed=()=>crypto.getRandomValues(new Uint32Array(1))[0];
-function clearInput(){for(const k of keys)blockedUntilRelease.add(k);keys.clear();if(sim){sim.rawInput=controlsFromKeys(keys);sim.input=controlsFromKeys(keys);}accumulator=0;}
+function sendInput(){client?.send({type:'input',controls:controlsFromKeys(keys)});}
+function clearInput(){for(const k of keys)blockedUntilRelease.add(k);keys.clear();if(sim){sim.rawInput=controlsFromKeys(keys);sim.input=controlsFromKeys(keys);}sendInput();needsRender=true;}
 function openOverlay(mode:'pause'|'settings'|'failure') {
   $('overlay').hidden=false;$('settings').hidden=mode!=='settings';$('result-stats').hidden=mode!=='failure';
   $('resume-button').hidden=mode==='failure';$('restart-button').hidden=mode==='settings';
@@ -30,9 +32,14 @@ function openOverlay(mode:'pause'|'settings'|'failure') {
   $('modal-title').textContent=mode==='failure'?sim.failure?.reason||'旅程结束':mode==='settings'?'驾驶设置':'旅程暂停';
   $('modal-description').textContent=mode==='failure'?sim.failure?.detail||'':mode==='settings'?'保持你的节奏。音效、导航和画质分别控制。':'路况与燃料已冻结。准备好后，继续驾驶。';
 }
-function pause(settings=false) {if(state!=='running'&&state!=='paused'&&!(settings&&state==='ready'))return;state='paused';clearInput();audio.silence();openOverlay(settings?'settings':'pause');}
-function resume(){if(state==='failed'||state==='loading')return;$('overlay').hidden=true;$('intro').hidden=true;clearInput();state='running';lastTime=performance.now();audio.start();}
-function restart() {clearInput();audio.reset();sim.dispose();sim=new Simulation(seed());view.setSimulation(sim);state='paused';resume();}
+function pause(settings=false) {if(state!=='running'&&state!=='paused'&&!(settings&&state==='ready'))return;state='paused';clearInput();client.send({type:'pause'});audio.silence();openOverlay(settings?'settings':'pause');}
+function resume(){if(state==='failed'||state==='loading')return;$('overlay').hidden=true;$('intro').hidden=true;clearInput();state='running';client.send({type:'resume'});audio.start();}
+async function prepareSimulation(){
+  client=new SimulationClient(seed());await client.ready;sim=client.state;
+  client.onUpdate=()=>{if(sim.failure&&state==='running')fail();if(state!=='running')needsRender=true;};
+  client.onError=error=>{pause();$('modal-description').textContent=`驾驶线程发生错误：${error.message}`;};
+}
+async function restart() {if(state==='loading')return;clearInput();audio.reset();client.dispose();state='loading';$<HTMLButtonElement>('restart-button').disabled=true;$('modal-title').textContent='准备新的道路…';try{await prepareSimulation();view.setSimulation(sim);state='paused';resume();}catch(error){$('modal-description').textContent=String(error);}finally{$<HTMLButtonElement>('restart-button').disabled=false;}}
 function fail() {
   state='failed';clearInput();audio.silence();
   $('result-distance').innerHTML=`${(sim.distance/1000).toFixed(2)}<small>km</small>`;openOverlay('failure');
@@ -41,37 +48,32 @@ window.addEventListener('keydown',e=>{
   if(state!=='loading')e.preventDefault();
   if(!FUNCTION_KEYS.has(e.code)){pause();return;}
   if(!e.repeat)blockedUntilRelease.delete(e.code);
-  if(state==='running'&&!blockedUntilRelease.has(e.code))keys.add(e.code);
+  if(state==='running'&&!blockedUntilRelease.has(e.code)){keys.add(e.code);sendInput();}
 });
-window.addEventListener('keyup',e=>{keys.delete(e.code);blockedUntilRelease.delete(e.code);});
+window.addEventListener('keyup',e=>{keys.delete(e.code);blockedUntilRelease.delete(e.code);sendInput();});
 window.addEventListener('blur',()=>{pause();});document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});
 $('start-button').onclick=resume;$('resume-button').onclick=resume;$('restart-button').onclick=restart;
 $('pause-button').onclick=()=>pause();$('settings-button').onclick=()=>pause(true);
 $<HTMLInputElement>('effects').onchange=e=>{audio.effects=(e.target as HTMLInputElement).checked;};
 $<HTMLInputElement>('voice').onchange=e=>{audio.voice=(e.target as HTMLInputElement).checked;if(!audio.voice&&'speechSynthesis'in window)speechSynthesis.cancel();};
-$<HTMLSelectElement>('quality').onchange=e=>{view.quality=(e.target as HTMLSelectElement).value as 'high'|'low';view.renderer.setPixelRatio(view.quality==='high'?Math.min(devicePixelRatio,1.5):1);view.resize();};
+$<HTMLSelectElement>('quality').onchange=e=>{view.setQuality((e.target as HTMLSelectElement).value as Quality);needsRender=true;};
 $('fullscreen').onclick=()=>{if(document.fullscreenElement)void document.exitFullscreen();else void document.documentElement.requestFullscreen();};
 document.querySelector('.wordmark')!.addEventListener('click',e=>{e.preventDefault();pause();});
-window.addEventListener('resize',()=>view?.resize());
+window.addEventListener('resize',()=>{view?.resize();needsRender=true;});
 
 async function boot() {
   try {
-    await initPhysics();sim=new Simulation(seed());view=new View($<HTMLCanvasElement>('world'),sim);view.render();
+    await prepareSimulation();view=new View($<HTMLCanvasElement>('world'),sim);view.render();
     state='ready';$<HTMLButtonElement>('start-button').disabled=false;$('loading-label').textContent='开始驾驶';
     // Read-only telemetry and deterministic harness for local verification; omitted from production.
-    if(import.meta.env.DEV)Object.defineProperty(window,'__roadster',{get:()=>({sim,view,state,keys,controlsFromKeys,pause,resume})});
+    if(import.meta.env.DEV)Object.defineProperty(window,'__roadster',{get:()=>({sim,view,state,keys,controlsFromKeys,pause,resume,client})});
     requestAnimationFrame(loop);
   } catch(error) {console.error(error);$('loading-error').hidden=false;$('loading-error').textContent=`驾驶舱未能启动：${String(error)}。请使用支持 WebGL 2 的浏览器。`; $('loading-label').textContent='启动失败';}
 }
 function loop(now:number) {
-  const delta=Math.min(0.1,(now-lastTime)/1000);lastTime=now;
-  if(state==='running') {
-    accumulator+=delta;
-    while(accumulator>=STEP&&state==='running'){sim.tick(controlsFromKeys(keys));accumulator-=STEP;if(sim.failure)fail();}
-    if(state==='running')audio.update(sim);
-  }
+  if(state==='running')audio.update(sim);
   if(now-lastUI>100){$('distance').textContent=`${(sim.distance/1000).toFixed(2)} KM`;document.querySelector<HTMLElement>('.control-legend')!.hidden=sim.s>300;lastUI=now;}
-  view.render(now);requestAnimationFrame(loop);
+  if(state==='running'||needsRender){view.render(now,state==='running');needsRender=false;}requestAnimationFrame(loop);
 }
 void boot();
 

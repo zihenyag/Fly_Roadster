@@ -4,306 +4,306 @@
   "physicsSeedCount": 50,
   "physicsDistanceTarget": 20000,
   "passed": 50,
-  "elapsedSeconds": 140.464,
+  "elapsedSeconds": 139.484,
   "results": [
     {
       "seed": 0,
-      "distance": 20000.201478494077,
-      "seconds": 571.7999999996443,
+      "distance": 20000.12673304223,
+      "seconds": 573.5333333329761,
       "failure": null
     },
     {
       "seed": 1,
-      "distance": 20000.109114488285,
-      "seconds": 579.566666666304,
+      "distance": 20000.02430595478,
+      "seconds": 582.3583333329681,
       "failure": null
     },
     {
       "seed": 2,
-      "distance": 20000.25154416243,
-      "seconds": 559.1916666663225,
+      "distance": 20000.21906837744,
+      "seconds": 561.7333333329868,
       "failure": null
     },
     {
       "seed": 3,
-      "distance": 20000.253075017707,
-      "seconds": 567.3583333329817,
+      "distance": 20000.114532520627,
+      "seconds": 568.824999999647,
       "failure": null
     },
     {
       "seed": 4,
-      "distance": 20000.071530126253,
-      "seconds": 572.5249999996437,
+      "distance": 20000.220226926296,
+      "seconds": 574.2749999996421,
       "failure": null
     },
     {
       "seed": 5,
-      "distance": 20000.056609713785,
-      "seconds": 553.8749999996606,
+      "distance": 20000.038467942097,
+      "seconds": 556.3083333329918,
       "failure": null
     },
     {
       "seed": 6,
-      "distance": 20000.20308988182,
-      "seconds": 560.7583333329877,
+      "distance": 20000.227472643364,
+      "seconds": 563.0583333329856,
       "failure": null
     },
     {
       "seed": 7,
-      "distance": 20000.257911378027,
-      "seconds": 571.024999999645,
+      "distance": 20000.22325170075,
+      "seconds": 573.5916666663094,
       "failure": null
     },
     {
       "seed": 8,
-      "distance": 20000.283318167283,
-      "seconds": 566.9749999996487,
+      "distance": 20000.063750483503,
+      "seconds": 570.4249999996456,
       "failure": null
     },
     {
       "seed": 9,
-      "distance": 20000.109999889417,
-      "seconds": 571.0583333329783,
+      "distance": 20000.231254437218,
+      "seconds": 573.5666666663094,
       "failure": null
     },
     {
       "seed": 10,
-      "distance": 20000.174069308567,
-      "seconds": 564.3999999996511,
+      "distance": 20000.17151702806,
+      "seconds": 565.5583333329834,
       "failure": null
     },
     {
       "seed": 11,
-      "distance": 20000.01570446898,
-      "seconds": 555.1833333329928,
+      "distance": 20000.04748490087,
+      "seconds": 557.1749999996576,
       "failure": null
     },
     {
       "seed": 12,
-      "distance": 20000.10028426462,
-      "seconds": 555.316666666326,
+      "distance": 20000.19686607694,
+      "seconds": 557.6249999996572,
       "failure": null
     },
     {
       "seed": 13,
-      "distance": 20000.24111913623,
-      "seconds": 569.9333333329794,
+      "distance": 20000.248550134293,
+      "seconds": 571.6249999996445,
       "failure": null
     },
     {
       "seed": 14,
-      "distance": 20000.133346580606,
-      "seconds": 564.3916666663177,
+      "distance": 20000.036035153404,
+      "seconds": 566.8083333329822,
       "failure": null
     },
     {
       "seed": 15,
-      "distance": 20000.27884451897,
-      "seconds": 571.1916666663116,
+      "distance": 20000.099215712846,
+      "seconds": 572.558333332977,
       "failure": null
     },
     {
       "seed": 16,
-      "distance": 20000.07571574578,
-      "seconds": 564.4333333329844,
+      "distance": 20000.185344827823,
+      "seconds": 566.8416666663155,
       "failure": null
     },
     {
       "seed": 17,
-      "distance": 20000.012240694694,
-      "seconds": 566.1166666663162,
+      "distance": 20000.00154026361,
+      "seconds": 567.2166666663152,
       "failure": null
     },
     {
       "seed": 18,
-      "distance": 20000.253181903532,
-      "seconds": 570.9083333329785,
+      "distance": 20000.054033930788,
+      "seconds": 573.1999999996431,
       "failure": null
     },
     {
       "seed": 19,
-      "distance": 20000.232577333092,
-      "seconds": 561.1333333329874,
+      "distance": 20000.19641406561,
+      "seconds": 563.016666666319,
       "failure": null
     },
     {
       "seed": 20,
-      "distance": 20000.201368814734,
-      "seconds": 570.8833333329785,
+      "distance": 20000.096053949786,
+      "seconds": 575.3499999996411,
       "failure": null
     },
     {
       "seed": 21,
-      "distance": 20000.128559803365,
-      "seconds": 573.299999999643,
+      "distance": 20000.262100679134,
+      "seconds": 575.883333332974,
       "failure": null
     },
     {
       "seed": 22,
-      "distance": 20000.030668024887,
-      "seconds": 565.7333333329832,
+      "distance": 20000.015999516552,
+      "seconds": 569.1333333329801,
       "failure": null
     },
     {
       "seed": 23,
-      "distance": 20000.224585502725,
-      "seconds": 575.0999999996413,
+      "distance": 20000.21046859716,
+      "seconds": 577.0416666663062,
       "failure": null
     },
     {
       "seed": 24,
-      "distance": 20000.284516251,
-      "seconds": 560.3416666663214,
+      "distance": 20000.276860978167,
+      "seconds": 563.4083333329853,
       "failure": null
     },
     {
       "seed": 25,
-      "distance": 20000.09754621604,
-      "seconds": 570.0833333329792,
+      "distance": 20000.10838172543,
+      "seconds": 571.7166666663111,
       "failure": null
     },
     {
       "seed": 26,
-      "distance": 20000.232272382098,
-      "seconds": 562.1916666663197,
+      "distance": 20000.137520172182,
+      "seconds": 565.6499999996499,
       "failure": null
     },
     {
       "seed": 27,
-      "distance": 20000.266862594333,
-      "seconds": 559.6166666663221,
+      "distance": 20000.274492304474,
+      "seconds": 561.8333333329867,
       "failure": null
     },
     {
       "seed": 28,
-      "distance": 20000.057977773926,
-      "seconds": 575.0749999996414,
+      "distance": 20000.043323848724,
+      "seconds": 576.4499999996401,
       "failure": null
     },
     {
       "seed": 29,
-      "distance": 20000.01152930865,
-      "seconds": 565.5833333329833,
+      "distance": 20000.22321374798,
+      "seconds": 567.6083333329815,
       "failure": null
     },
     {
       "seed": 30,
-      "distance": 20000.13677448881,
-      "seconds": 558.8833333329894,
+      "distance": 20000.1670048119,
+      "seconds": 561.4083333329871,
       "failure": null
     },
     {
       "seed": 31,
-      "distance": 20000.22075867898,
-      "seconds": 568.5916666663139,
+      "distance": 20000.08326963599,
+      "seconds": 572.174999999644,
       "failure": null
     },
     {
       "seed": 32,
-      "distance": 20000.055401316557,
-      "seconds": 560.6166666663212,
+      "distance": 20000.362186943395,
+      "seconds": 562.7416666663192,
       "failure": null
     },
     {
       "seed": 33,
-      "distance": 20000.217456280257,
-      "seconds": 567.4749999996483,
+      "distance": 20000.144979343648,
+      "seconds": 570.8833333329785,
       "failure": null
     },
     {
       "seed": 34,
-      "distance": 20000.229184591102,
-      "seconds": 559.3999999996556,
+      "distance": 20000.089182944525,
+      "seconds": 561.3333333329872,
       "failure": null
     },
     {
       "seed": 35,
-      "distance": 20000.101807599145,
-      "seconds": 566.3583333329826,
+      "distance": 20000.04785710024,
+      "seconds": 567.8083333329813,
       "failure": null
     },
     {
       "seed": 36,
-      "distance": 20000.238041262597,
-      "seconds": 560.5499999996546,
+      "distance": 20000.09218630052,
+      "seconds": 562.9249999996524,
       "failure": null
     },
     {
       "seed": 37,
-      "distance": 20000.040844228377,
-      "seconds": 563.4166666663186,
+      "distance": 20000.170368779203,
+      "seconds": 564.524999999651,
       "failure": null
     },
     {
       "seed": 38,
-      "distance": 20000.19088894111,
-      "seconds": 558.9916666663227,
+      "distance": 20000.244759377663,
+      "seconds": 562.0833333329865,
       "failure": null
     },
     {
       "seed": 39,
-      "distance": 20000.2200942615,
-      "seconds": 556.8749999996579,
+      "distance": 20000.194690704582,
+      "seconds": 560.7166666663211,
       "failure": null
     },
     {
       "seed": 40,
-      "distance": 20000.179554627433,
-      "seconds": 565.62499999965,
+      "distance": 20000.18734283739,
+      "seconds": 568.2083333329809,
       "failure": null
     },
     {
       "seed": 41,
-      "distance": 20000.156828658633,
-      "seconds": 567.0666666663153,
+      "distance": 20000.022776110683,
+      "seconds": 569.1749999996467,
       "failure": null
     },
     {
       "seed": 42,
-      "distance": 20000.0394281967,
-      "seconds": 563.0999999996523,
+      "distance": 20000.016765844004,
+      "seconds": 564.066666666318,
       "failure": null
     },
     {
       "seed": 43,
-      "distance": 20000.04919987847,
-      "seconds": 569.2416666663133,
+      "distance": 20000.227528520856,
+      "seconds": 570.9333333329785,
       "failure": null
     },
     {
       "seed": 44,
-      "distance": 20000.220908534324,
-      "seconds": 567.0666666663153,
+      "distance": 20000.08649076949,
+      "seconds": 568.924999999647,
       "failure": null
     },
     {
       "seed": 45,
-      "distance": 20000.22066880521,
-      "seconds": 557.1999999996576,
+      "distance": 20000.16810918441,
+      "seconds": 560.7416666663211,
       "failure": null
     },
     {
       "seed": 46,
-      "distance": 20000.134242560747,
-      "seconds": 570.7749999996453,
+      "distance": 20000.212414404923,
+      "seconds": 572.2416666663106,
       "failure": null
     },
     {
       "seed": 47,
-      "distance": 20000.257489264637,
-      "seconds": 560.7249999996544,
+      "distance": 20000.189766208383,
+      "seconds": 562.608333332986,
       "failure": null
     },
     {
       "seed": 48,
-      "distance": 20000.230132411623,
-      "seconds": 569.6499999996463,
+      "distance": 20000.055012686316,
+      "seconds": 570.5749999996455,
       "failure": null
     },
     {
       "seed": 49,
-      "distance": 20000.00857648186,
-      "seconds": 573.2083333329764,
+      "distance": 20000.120086882074,
+      "seconds": 576.4166666663068,
       "failure": null
     }
   ]

@@ -12,6 +12,7 @@ type Internals={
   addNPC(kind:NPC['kind'],s:number,lane:number,speed:number):NPC;
   validating:boolean;
   fired:Set<number>;
+  replayEscape(lane:number,seconds:number,reactionDelay?:number):boolean;
 };
 function fixture(speed=80) {
   const sim=new Simulation(19,false);sim.s=600;sim.ensureWorld();const f=sim.route.sample(sim.s);
@@ -21,6 +22,13 @@ function fixture(speed=80) {
   return {sim,helper};
 }
 const spec=(sim:Simulation,kind:HazardSpec['kind']):HazardSpec=>({id:999,at:sim.s,kind,lane:0,reaction:6.5,witness:'left',side:1});
+
+test('a rejected hazard performs at most one full replay per attempt and never leaks a vehicle',()=>{
+  const {sim,helper}=fixture();let calls=0;
+  helper.replayEscape=()=>{calls++;return false;};
+  assert.equal(helper.spawnHazard(spec(sim,'v800')),false);
+  assert.equal(calls,1);assert.equal(sim.npcs.length,0);assert.equal(sim.certifiedHazards,0);sim.dispose();
+});
 
 test('V800 never exceeds the player by 20 km/h, including after braking to a stop',()=>{
   for(const speed of [0,40,80,160,250]) {
